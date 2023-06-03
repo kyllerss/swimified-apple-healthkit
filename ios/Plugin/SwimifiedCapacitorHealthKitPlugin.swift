@@ -11,6 +11,15 @@ var healthStore = HKHealthStore()
 @objc(SwimifiedCapacitorHealthKitPlugin)
 public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     
+    @objc func is_available(_ call: CAPPluginCall) {
+        
+        if HKHealthStore.isHealthDataAvailable() {
+            return call.resolve()
+        } else {
+            return call.reject("HealthKit is not available in this device.")
+        }
+    }
+    
     @objc public func request_permissions(_ call: CAPPluginCall) {
         
         if !HKHealthStore.isHealthDataAvailable() {

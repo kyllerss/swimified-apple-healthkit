@@ -14,8 +14,8 @@ npx cap sync
 <docgen-index>
 
 * [`request_permissions()`](#request_permissions)
-* [`fetch_workouts(...)`](#fetch_workouts)
 * [`is_available()`](#is_available)
+* [`fetch_workouts(...)`](#fetch_workouts)
 * [Interfaces](#interfaces)
 
 </docgen-index>
@@ -32,27 +32,26 @@ request_permissions() => Promise<void>
 --------------------
 
 
-### fetch_workouts(...)
-
-```typescript
-fetch_workouts(startDate: Date, endDate: Date) => Promise<WorkoutResults>
-```
-
-| Param           | Type                                  |
-| --------------- | ------------------------------------- |
-| **`startDate`** | <code><a href="#date">Date</a></code> |
-| **`endDate`**   | <code><a href="#date">Date</a></code> |
-
-**Returns:** <code>Promise&lt;<a href="#workoutresults">WorkoutResults</a>&gt;</code>
-
---------------------
-
-
 ### is_available()
 
 ```typescript
 is_available() => Promise<void>
 ```
+
+--------------------
+
+
+### fetch_workouts(...)
+
+```typescript
+fetch_workouts(opts: { startDate: Date; endDate: Date; }) => Promise<WorkoutResults>
+```
+
+| Param      | Type                                                                                     |
+| ---------- | ---------------------------------------------------------------------------------------- |
+| **`opts`** | <code>{ startDate: <a href="#date">Date</a>; endDate: <a href="#date">Date</a>; }</code> |
+
+**Returns:** <code>Promise&lt;<a href="#workoutresults">WorkoutResults</a>&gt;</code>
 
 --------------------
 

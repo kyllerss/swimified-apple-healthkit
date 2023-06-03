@@ -16,18 +16,23 @@
         "slug": "request_permissions"
       },
       {
+        "name": "is_available",
+        "signature": "() => Promise<void>",
+        "parameters": [],
+        "returns": "Promise<void>",
+        "tags": [],
+        "docs": "",
+        "complexTypes": [],
+        "slug": "is_available"
+      },
+      {
         "name": "fetch_workouts",
-        "signature": "(startDate: Date, endDate: Date) => Promise<WorkoutResults>",
+        "signature": "(opts: { startDate: Date; endDate: Date; }) => Promise<WorkoutResults>",
         "parameters": [
           {
-            "name": "startDate",
+            "name": "opts",
             "docs": "",
-            "type": "Date"
-          },
-          {
-            "name": "endDate",
-            "docs": "",
-            "type": "Date"
+            "type": "{ startDate: Date; endDate: Date; }"
           }
         ],
         "returns": "Promise<WorkoutResults>",
@@ -38,16 +43,6 @@
           "Date"
         ],
         "slug": "fetch_workouts"
-      },
-      {
-        "name": "is_available",
-        "signature": "() => Promise<void>",
-        "parameters": [],
-        "returns": "Promise<void>",
-        "tags": [],
-        "docs": "",
-        "complexTypes": [],
-        "slug": "is_available"
       }
     ],
     "properties": []

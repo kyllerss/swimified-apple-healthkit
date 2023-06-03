@@ -1,7 +1,7 @@
 export interface SwimifiedCapacitorHealthKitPlugin {
     request_permissions(): Promise<void>;
-    fetch_workouts(startDate: Date, endDate: Date): Promise<WorkoutResults>;
     is_available(): Promise<void>;
+    fetch_workouts(opts: {startDate: Date, endDate: Date}): Promise<WorkoutResults>;
 }
 
 export interface WorkoutResults {

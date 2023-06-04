@@ -159,7 +159,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                     }
                                             
                     output.append([
-                         "uuid": sample.uuid.uuidString,
+                         "uuid": uuid,
                          "startDate": start_date,
                          "endDate": end_date as Any,
                          "source": source,
@@ -167,7 +167,9 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                          "device": device as Any,
                          "HKWorkoutActivityId": workout_activity_id,
                          "HKWorkoutEvents": events,
-                         "CLLocations": cl_locations
+                         "CLLocations": cl_locations,
+                         "HKLapLength": lap_length?.doubleValue(for: .meter()) as Any,
+                         "HKSwimLocationType": location_type
                      ])
 
                 } catch {

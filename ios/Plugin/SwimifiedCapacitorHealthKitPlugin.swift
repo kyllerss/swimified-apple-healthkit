@@ -19,17 +19,25 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     
     @objc func is_available(_ call: CAPPluginCall) {
         
-        if HKHealthStore.isHealthDataAvailable() {
-            return call.resolve()
+        if #available(iOS 16.0, *) {
+            
+            if HKHealthStore.isHealthDataAvailable() {
+                return call.resolve()
+            } else {
+                return call.reject("Apple HealthKit is not available on this device.")
+            }
+            
         } else {
-            return call.reject("HealthKit is not available on this device.")
+            
+            // iOS >=16 supported
+            return call.reject("Apple HealthKit support is limited to iOS 16 and above.")
         }
     }
     
     @objc public func request_permissions(_ call: CAPPluginCall) {
         
         if !HKHealthStore.isHealthDataAvailable() {
-            return call.reject("HealthKit is not available on this device.")
+            return call.reject("Apple HealthKit is not available on this device.")
         }
         
         let writeTypes: Set<HKSampleType> = []

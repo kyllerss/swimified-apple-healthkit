@@ -60,8 +60,6 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             return call.reject("Parameter endDate is required!")
         }
         
-//        print("Fetch workout parameters: ", startDate, endDate);
-        
         let limit: Int = HKObjectQueryNoLimit
         
         let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: HKQueryOptions.strictStartDate)
@@ -76,8 +74,6 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                     return call.reject("Unable to process results")
                 }
                 
-    //            print("Fetch workout result: ", output)
-                
                 call.resolve([
                     "count": output.count,
                     "results": output,
@@ -89,16 +85,6 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     
     func generate_sample_output(results: [HKSample]?) async -> [JSObject]? {
         
-//        output.append([
-//            "uuid": "1234-1234-1234-1234",
-//            "startDate": Date(),
-//            "endDate": Date(),
-//            "source": "healthkit dummy source",
-//            "sourceBundleId": "healthkit dummy bundle id",
-//            "device": getDeviceInformation(device: nil) as Any,
-//            "HKWorkoutActivityId": 1,
-//        ])
-//        return output
         if results == nil {
             return []
         }
@@ -117,27 +103,29 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                 continue
             }
 
+            var workout_obj = JSObject()
+            workout_obj["uuid"] = sample.uuid.uuidString
+            workout_obj["start_date"] = sample.startDate
+            workout_obj["end_date"] = sample.endDate
+            workout_obj["source"] = sample.sourceRevision.source.name
+            workout_obj["source_bundle_id"] = sample.sourceRevision.source.bundleIdentifier
+            workout_obj["device"] = get_device_information(device: sample.device)
+            workout_obj["HKWorkoutActivityTypeId"] = Int(sample.workoutActivityType.rawValue)
+
             /*
              * NOTE: In case of a simple swim, there is one entry.
              *       In case of triathlon, multiple entries of which one is a swim.
              */
+            var activities_obj: [JSObject] = []
             for activity in sample.workoutActivities {
                 
                 let workout_config = activity.workoutConfiguration
                 
-                if workout_config.activityType != HKWorkoutActivityType.swimming {
-                    continue
-                }
-        
                 let lap_length = workout_config.lapLength
                 let location_type = workout_config.swimmingLocationType
                 let start_date = activity.startDate
                 let end_date = activity.endDate
-                let source = sample.sourceRevision.source.name
-                let source_bundle_id = sample.sourceRevision.source.bundleIdentifier
                 let uuid = activity.uuid
-                let device = get_device_information(device: sample.device)
-                let workout_activity_id = sample.workoutActivityType.rawValue
 
                 // events
                 var events: [JSObject] = []
@@ -145,37 +133,40 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                     
                     events.append(generate_event_output(event: event))
                 }
-
-                // GPS coordinates
-                do {
-                    let route: HKWorkoutRoute = try await get_route(for: activity)
-                    let locations = try await get_locations(for: route)
-                    
-                    var cl_locations: [JSObject] = []
-                    for location in locations {
-                        
-                        cl_locations.append(generate_location_output(from: location))
-                    }
-                          
-                    var js_obj = JSObject()
-                    
-                    js_obj["uuid"] = uuid.uuidString
-                    js_obj["start_date"] = start_date
-                    js_obj["end_date"] = end_date
-                    js_obj["source"] = source
-                    js_obj["source_bundle_id"] = source_bundle_id
-                    js_obj["device"] = device
-                    js_obj["HKWorkoutActivityId"] = Int(workout_activity_id)
-                    js_obj["HKWorkoutEvents"] = events
-                    js_obj["CLLocations"] = cl_locations
-                    js_obj["HKLapLength"] = lap_length?.doubleValue(for: .meter())
-                    js_obj["HKSwimLocationType"] = location_type.rawValue
-                    
-                    output.append(js_obj)
-                } catch {
-                    print("Unable to process CLLocations for ", sample.uuid.uuidString)
-                }
+                
+                var js_obj = JSObject()
+                
+                js_obj["uuid"] = uuid.uuidString
+                js_obj["start_date"] = start_date
+                js_obj["end_date"] = end_date
+                js_obj["HKWorkoutEvents"] = events
+                js_obj["HKLapLength"] = lap_length?.doubleValue(for: .meter())
+                js_obj["HKSwimLocationType"] = location_type.rawValue
+                js_obj["HKWorkoutActivityType"] = Int(workout_config.activityType.rawValue)
+                
+                activities_obj.append(js_obj)
             }
+
+            workout_obj["HKWorkoutActivities"] = activities_obj
+            
+            // GPS coordinates
+            do {
+                let route: HKWorkoutRoute = try await get_route(for: sample)
+                let locations = try await get_locations(for: route)
+                
+                var cl_locations: [JSObject] = []
+                for location in locations {
+                    
+                    cl_locations.append(generate_location_output(from: location))
+                }
+                
+                workout_obj["CLLocations"] = cl_locations
+
+            } catch {
+                print("Unable to process CLLocations for ", sample.uuid.uuidString, error)
+            }
+
+            output.append(workout_obj)
         }
 
         return output
@@ -219,24 +210,27 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         return device_information;
     }
     
-    private func get_route(for workout: HKWorkoutActivity) async throws -> HKWorkoutRoute {
+    private func get_route(for workout: HKWorkout) async throws -> HKWorkoutRoute {
         try await withCheckedThrowingContinuation { continuation in
             get_route(for: workout) { result in
                 continuation.resume(with: result)
             }
         }
     }
-    private func get_route(for workout: HKWorkoutActivity, completion: @escaping (Result<HKWorkoutRoute, Error>) -> Void) {
+    private func get_route(for workout: HKWorkout, completion: @escaping (Result<HKWorkoutRoute, Error>) -> Void) {
         
-        let predicate = HKQuery.predicateForObject(with: workout.uuid)
+        let predicate = HKQuery.predicateForObjects(from: workout)
         let query = HKAnchoredObjectQuery(type: HKSeriesType.workoutRoute(),
                                           predicate: predicate,
                                           anchor: nil,
                                           limit: HKObjectQueryNoLimit)
         { _, samples, _, _, error in
             if let resultError = error {
+                print("Error when fetching route: ", resultError)
                 return completion(.failure(resultError))
             }
+            
+            print("Successfully fetched route: ", samples!.count)
             if let routes = samples as? [HKWorkoutRoute],
                let route = routes.first
             {
@@ -290,4 +284,5 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     }
 
 }
+
 

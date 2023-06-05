@@ -72,7 +72,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             _, results, _ in
             
             Task {
-                guard let output: [[String: Any]] = await self.generate_sample_output(results: results) else {
+                guard let output: [JSObject] = await self.generate_sample_output(results: results) else {
                     return call.reject("Unable to process results")
                 }
                 
@@ -87,7 +87,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         healthStore.execute(query)
     }
     
-    func generate_sample_output(results: [HKSample]?) async -> [[String: Any]]? {
+    func generate_sample_output(results: [HKSample]?) async -> [JSObject]? {
         
 //        output.append([
 //            "uuid": "1234-1234-1234-1234",
@@ -103,7 +103,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             return []
         }
 
-        var output: [[String: Any]] = []
+        var output: [JSObject] = []
 
         for result in results! {
 
@@ -140,38 +140,38 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                 let workout_activity_id = sample.workoutActivityType.rawValue
 
                 // events
-                var events: [[String: Any?]] = []
+                var events: [JSObject] = []
                 for event in activity.workoutEvents {
                     
                     events.append(generate_event_output(event: event))
                 }
 
                 // GPS coordinates
-                var cl_locations: [[String: Any?]] = []
-
                 do {
                     let route: HKWorkoutRoute = try await get_route(for: activity)
                     let locations = try await get_locations(for: route)
                     
+                    var cl_locations: [JSObject] = []
                     for location in locations {
                         
                         cl_locations.append(generate_location_output(from: location))
                     }
-                                            
-                    output.append([
-                         "uuid": uuid,
-                         "startDate": start_date,
-                         "endDate": end_date as Any,
-                         "source": source,
-                         "sourceBundleId": source_bundle_id,
-                         "device": device as Any,
-                         "HKWorkoutActivityId": workout_activity_id,
-                         "HKWorkoutEvents": events,
-                         "CLLocations": cl_locations,
-                         "HKLapLength": lap_length?.doubleValue(for: .meter()) as Any,
-                         "HKSwimLocationType": location_type
-                     ])
-
+                          
+                    var js_obj = JSObject()
+                    
+                    js_obj["uuid"] = uuid.uuidString
+                    js_obj["start_date"] = start_date
+                    js_obj["end_date"] = end_date
+                    js_obj["source"] = source
+                    js_obj["source_bundle_id"] = source_bundle_id
+                    js_obj["device"] = device
+                    js_obj["HKWorkoutActivityId"] = Int(workout_activity_id)
+                    js_obj["HKWorkoutEvents"] = events
+                    js_obj["CLLocations"] = cl_locations
+                    js_obj["HKLapLength"] = lap_length?.doubleValue(for: .meter())
+                    js_obj["HKSwimLocationType"] = location_type.rawValue
+                    
+                    output.append(js_obj)
                 } catch {
                     print("Unable to process CLLocations for ", sample.uuid.uuidString)
                 }
@@ -181,7 +181,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         return output
      }
 
-    func generate_event_output(event: HKWorkoutEvent) -> [String: Any?] {
+    func generate_event_output(event: HKWorkoutEvent) -> JSObject {
         
         let type: HKWorkoutEventType = event.type
         let start_timestamp: Date = event.dateInterval.start
@@ -193,28 +193,30 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             stroke_style = .unknown
         }
         
-        return [
-            "type": type.rawValue,
-            "start_timestamp": start_timestamp,
-            "end_timestamp": end_timestamp,
-            "stroke_style": stroke_style.rawValue
-        ]
+        var to_return = JSObject()
+        
+        to_return["type"] = type.rawValue
+        to_return["start_timestamp"] = start_timestamp
+        to_return["end_timestamp"] = end_timestamp
+        to_return["stroke_style"] = stroke_style.rawValue
+        
+        return to_return
     }
     
-    func get_device_information(device: HKDevice?) -> [String: String?]? {
+    func get_device_information(device: HKDevice?) -> JSObject? {
         
         if (device == nil) {
             return nil;
         }
                         
-        let deviceInformation: [String: String?] = [
-            "name": device?.name,
-            "model": device?.model,
-            "manufacturer": device?.manufacturer,
-            "hardwareVersion": device?.hardwareVersion,
-            "softwareVersion": device?.softwareVersion,
-        ];
-        return deviceInformation;
+        var device_information = JSObject()
+        device_information["name"] = device?.name
+        device_information["model"] = device?.model
+        device_information["manufacturer"] = device?.manufacturer
+        device_information["hardware_version"] = device?.hardwareVersion
+        device_information["software_version"] = device?.softwareVersion
+        
+        return device_information;
     }
     
     private func get_route(for workout: HKWorkoutActivity) async throws -> HKWorkoutRoute {
@@ -271,19 +273,21 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         healthStore.execute(query)
     }
 
-    private func generate_location_output(from location: CLLocation) -> [String: Any] {
+    private func generate_location_output(from location: CLLocation) -> JSObject {
 
         let timestamp: Date = location.timestamp
         let latitude = location.coordinate.latitude
         let longitude = location.coordinate.longitude
         let altitude = location.altitude
         
-        return [
-            "timestamp": timestamp,
-            "latitude": latitude,
-            "longitude": longitude,
-            "altitude": altitude
-        ]
+        var to_return = JSObject();
+        to_return["timestamp"] = timestamp
+        to_return["latitude"] = latitude
+        to_return["longitude"] = longitude
+        to_return["altitude"] = altitude
+        
+        return to_return
     }
 
 }
+

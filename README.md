@@ -72,12 +72,16 @@ fetch_workouts(opts: { startDate: Date; endDate: Date; }) => Promise<WorkoutResu
 | Prop                      | Type                                                            |
 | ------------------------- | --------------------------------------------------------------- |
 | **`uuid`**                | <code>string</code>                                             |
-| **`startDate`**           | <code><a href="#date">Date</a></code>                           |
-| **`endDate`**             | <code><a href="#date">Date</a></code>                           |
+| **`start_date`**          | <code><a href="#date">Date</a></code>                           |
+| **`end_date`**            | <code><a href="#date">Date</a></code>                           |
 | **`source`**              | <code>string</code>                                             |
-| **`sourceBundleId`**      | <code>string</code>                                             |
+| **`source_bundle_id`**    | <code>string</code>                                             |
 | **`device`**              | <code><a href="#deviceinformation">DeviceInformation</a></code> |
 | **`HKWorkoutActivityId`** | <code>number</code>                                             |
+| **`HKWorkoutEvents`**     | <code>HKWorkoutEvent[]</code>                                   |
+| **`CLLocations`**         | <code>CLLocation[]</code>                                       |
+| **`HKLapLength`**         | <code>number</code>                                             |
+| **`HKSwimLocationType`**  | <code>number</code>                                             |
 
 
 #### Date
@@ -133,12 +137,32 @@ Enables basic storage and retrieval of dates and times.
 
 #### DeviceInformation
 
-| Prop                  | Type                |
-| --------------------- | ------------------- |
-| **`name`**            | <code>string</code> |
-| **`manufacturer`**    | <code>string</code> |
-| **`model`**           | <code>string</code> |
-| **`hardwareVersion`** | <code>string</code> |
-| **`softwareVersion`** | <code>string</code> |
+| Prop                   | Type                |
+| ---------------------- | ------------------- |
+| **`name`**             | <code>string</code> |
+| **`model`**            | <code>string</code> |
+| **`manufacturer`**     | <code>string</code> |
+| **`hardware_version`** | <code>string</code> |
+| **`software_version`** | <code>string</code> |
+
+
+#### HKWorkoutEvent
+
+| Prop                  | Type                                  |
+| --------------------- | ------------------------------------- |
+| **`type`**            | <code>number</code>                   |
+| **`start_timestamp`** | <code><a href="#date">Date</a></code> |
+| **`end_timestamp`**   | <code><a href="#date">Date</a></code> |
+| **`stroke_style`**    | <code>number</code>                   |
+
+
+#### CLLocation
+
+| Prop            | Type                                  |
+| --------------- | ------------------------------------- |
+| **`timestamp`** | <code><a href="#date">Date</a></code> |
+| **`latitude`**  | <code>number</code>                   |
+| **`longitude`** | <code>number</code>                   |
+| **`altitude`**  | <code>number</code>                   |
 
 </docgen-api>

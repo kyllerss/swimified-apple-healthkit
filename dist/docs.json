@@ -88,7 +88,7 @@
           "type": "string"
         },
         {
-          "name": "startDate",
+          "name": "start_date",
           "tags": [],
           "docs": "",
           "complexTypes": [
@@ -97,7 +97,7 @@
           "type": "Date"
         },
         {
-          "name": "endDate",
+          "name": "end_date",
           "tags": [],
           "docs": "",
           "complexTypes": [
@@ -113,7 +113,7 @@
           "type": "string"
         },
         {
-          "name": "sourceBundleId",
+          "name": "source_bundle_id",
           "tags": [],
           "docs": "",
           "complexTypes": [],
@@ -130,6 +130,38 @@
         },
         {
           "name": "HKWorkoutActivityId",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "number"
+        },
+        {
+          "name": "HKWorkoutEvents",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "HKWorkoutEvent"
+          ],
+          "type": "HKWorkoutEvent[]"
+        },
+        {
+          "name": "CLLocations",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "CLLocation"
+          ],
+          "type": "CLLocation[]"
+        },
+        {
+          "name": "HKLapLength",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "number | undefined"
+        },
+        {
+          "name": "HKSwimLocationType",
           "tags": [],
           "docs": "",
           "complexTypes": [],
@@ -924,13 +956,6 @@
           "type": "string"
         },
         {
-          "name": "manufacturer",
-          "tags": [],
-          "docs": "",
-          "complexTypes": [],
-          "type": "string"
-        },
-        {
           "name": "model",
           "tags": [],
           "docs": "",
@@ -938,18 +963,105 @@
           "type": "string"
         },
         {
-          "name": "hardwareVersion",
+          "name": "manufacturer",
           "tags": [],
           "docs": "",
           "complexTypes": [],
           "type": "string"
         },
         {
-          "name": "softwareVersion",
+          "name": "hardware_version",
           "tags": [],
           "docs": "",
           "complexTypes": [],
           "type": "string"
+        },
+        {
+          "name": "software_version",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "HKWorkoutEvent",
+      "slug": "hkworkoutevent",
+      "docs": "",
+      "tags": [],
+      "methods": [],
+      "properties": [
+        {
+          "name": "type",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "number"
+        },
+        {
+          "name": "start_timestamp",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "Date"
+          ],
+          "type": "Date"
+        },
+        {
+          "name": "end_timestamp",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "Date"
+          ],
+          "type": "Date"
+        },
+        {
+          "name": "stroke_style",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "CLLocation",
+      "slug": "cllocation",
+      "docs": "",
+      "tags": [],
+      "methods": [],
+      "properties": [
+        {
+          "name": "timestamp",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "Date"
+          ],
+          "type": "Date"
+        },
+        {
+          "name": "latitude",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "number"
+        },
+        {
+          "name": "longitude",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "number"
+        },
+        {
+          "name": "altitude",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "number"
         }
       ]
     }

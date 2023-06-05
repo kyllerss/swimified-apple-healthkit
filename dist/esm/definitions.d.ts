@@ -12,17 +12,33 @@ export interface WorkoutResults {
 }
 export interface WorkoutResult {
     uuid: string;
-    startDate: Date;
-    endDate: Date;
+    start_date: Date;
+    end_date: Date;
     source: string;
-    sourceBundleId: string;
+    source_bundle_id: string;
     device?: DeviceInformation;
     HKWorkoutActivityId: number;
+    HKWorkoutEvents: HKWorkoutEvent[];
+    CLLocations: CLLocation[];
+    HKLapLength?: number;
+    HKSwimLocationType: number;
 }
 export interface DeviceInformation {
     name: string;
-    manufacturer: string;
     model: string;
-    hardwareVersion: string;
-    softwareVersion: string;
+    manufacturer: string;
+    hardware_version: string;
+    software_version: string;
+}
+export interface HKWorkoutEvent {
+    type: number;
+    start_timestamp: Date;
+    end_timestamp: Date;
+    stroke_style: number;
+}
+export interface CLLocation {
+    timestamp: Date;
+    latitude: number;
+    longitude: number;
+    altitude: number;
 }

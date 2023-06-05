@@ -18,10 +18,8 @@ export interface WorkoutResult {
     source_bundle_id: string,
     device?: DeviceInformation,
     HKWorkoutActivityId: number,
-    HKWorkoutEvents: HKWorkoutEvent[],
+    HKWorkoutActivities: HKWorkoutActivity[],
     CLLocations: CLLocation[],      
-    HKLapLength?: number,
-    HKSwimLocationType: number
 }
 
 export interface DeviceInformation {
@@ -32,6 +30,17 @@ export interface DeviceInformation {
     hardware_version: string,
     software_version: string,
 } 
+
+export interface HKWorkoutActivity {
+
+    uuid: string,
+    start_date: Date,
+    end_date: Date,
+    HKWorkoutEvents: HKWorkoutEvent[],
+    HKLapLength?: number,
+    HKSwimLocationType: number,
+    HKWorkoutActivityType: number
+}
 
 export interface HKWorkoutEvent {
 

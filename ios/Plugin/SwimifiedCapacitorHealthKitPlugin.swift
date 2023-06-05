@@ -22,14 +22,14 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         if HKHealthStore.isHealthDataAvailable() {
             return call.resolve()
         } else {
-            return call.reject("HealthKit is not available in this device.")
+            return call.reject("HealthKit is not available on this device.")
         }
     }
     
     @objc public func request_permissions(_ call: CAPPluginCall) {
         
         if !HKHealthStore.isHealthDataAvailable() {
-            return call.reject("Health data not available")
+            return call.reject("HealthKit is not available on this device.")
         }
         
         let writeTypes: Set<HKSampleType> = []
@@ -42,7 +42,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         healthStore.requestAuthorization(toShare: writeTypes, read: readTypes) { success, _ in
             
             if !success {
-                call.reject("Could not get requested permissions")
+                call.reject("Unable to get needed HealthKit permissions.")
                 return
             }
             call.resolve()
@@ -53,11 +53,11 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     
     @objc func fetch_workouts(_ call: CAPPluginCall) {
         
-        guard let startDate = call.getDate("startDate") else {
-            return call.reject("Parameter startDate is required!")
+        guard let startDate = call.getDate("start_date") else {
+            return call.reject("Parameter start_date is required!")
         }
-        guard let endDate = call.getDate("endDate") else {
-            return call.reject("Parameter endDate is required!")
+        guard let endDate = call.getDate("end_date") else {
+            return call.reject("Parameter end_date is required!")
         }
         
         let limit: Int = HKObjectQueryNoLimit
@@ -67,11 +67,15 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         let sampleType: HKSampleType = HKWorkoutType.workoutType()
         
         let query = HKSampleQuery(sampleType: sampleType, predicate: predicate, limit: limit, sortDescriptors: nil) {
-            _, results, _ in
+            _, results, error in
+            
+            if let error_message = error?.localizedDescription {
+                return call.reject("Unable to fetch Apple HealthKit results. Please consider re-authorizing Apple HealthKit integration. Error message: \(error_message)")
+            }
             
             Task {
                 guard let output: [JSObject] = await self.generate_sample_output(results: results) else {
-                    return call.reject("Unable to process results")
+                    return call.reject("Unable to obtain Apple HealthKit results. Support is limited to iOS version 16 and above.")
                 }
                 
                 call.resolve([
@@ -98,9 +102,16 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             }
 
             // only process swim-related activities
-            if sample.workoutActivityType != HKWorkoutActivityType.swimming
-                && sample.workoutActivityType != HKWorkoutActivityType.swimBikeRun {
-                continue
+            if #available(iOS 16.0, *) {
+                if sample.workoutActivityType != HKWorkoutActivityType.swimming
+                    && sample.workoutActivityType != HKWorkoutActivityType.swimBikeRun {
+                    continue
+                }
+            } else {
+                // Fallback on earlier versions
+                if sample.workoutActivityType != HKWorkoutActivityType.swimming {
+                    continue
+                }
             }
 
             var workout_obj = JSObject()
@@ -117,34 +128,39 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
              *       In case of triathlon, multiple entries of which one is a swim.
              */
             var activities_obj: [JSObject] = []
-            for activity in sample.workoutActivities {
+            if #available(iOS 16.0, *) {
                 
-                let workout_config = activity.workoutConfiguration
-                
-                let lap_length = workout_config.lapLength
-                let location_type = workout_config.swimmingLocationType
-                let start_date = activity.startDate
-                let end_date = activity.endDate
-                let uuid = activity.uuid
-
-                // events
-                var events: [JSObject] = []
-                for event in activity.workoutEvents {
+                for activity in sample.workoutActivities {
                     
-                    events.append(generate_event_output(event: event))
+                    let workout_config = activity.workoutConfiguration
+                    
+                    let lap_length = workout_config.lapLength
+                    let location_type = workout_config.swimmingLocationType
+                    let start_date = activity.startDate
+                    let end_date = activity.endDate
+                    let uuid = activity.uuid
+                    
+                    // events
+                    var events: [JSObject] = []
+                    for event in activity.workoutEvents {
+                        
+                        events.append(generate_event_output(event: event))
+                    }
+                    
+                    var js_obj = JSObject()
+                    
+                    js_obj["uuid"] = uuid.uuidString
+                    js_obj["start_date"] = start_date
+                    js_obj["end_date"] = end_date
+                    js_obj["HKWorkoutEvents"] = events
+                    js_obj["HKLapLength"] = lap_length?.doubleValue(for: .meter())
+                    js_obj["HKSwimLocationType"] = location_type.rawValue
+                    js_obj["HKWorkoutActivityType"] = Int(workout_config.activityType.rawValue)
+                    
+                    activities_obj.append(js_obj)
                 }
-                
-                var js_obj = JSObject()
-                
-                js_obj["uuid"] = uuid.uuidString
-                js_obj["start_date"] = start_date
-                js_obj["end_date"] = end_date
-                js_obj["HKWorkoutEvents"] = events
-                js_obj["HKLapLength"] = lap_length?.doubleValue(for: .meter())
-                js_obj["HKSwimLocationType"] = location_type.rawValue
-                js_obj["HKWorkoutActivityType"] = Int(workout_config.activityType.rawValue)
-                
-                activities_obj.append(js_obj)
+            } else {
+                return nil // signals an error to be sent to client
             }
 
             workout_obj["HKWorkoutActivities"] = activities_obj
@@ -230,7 +246,6 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                 return completion(.failure(resultError))
             }
             
-            print("Successfully fetched route: ", samples!.count)
             if let routes = samples as? [HKWorkoutRoute],
                let route = routes.first
             {

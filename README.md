@@ -44,12 +44,12 @@ is_available() => Promise<void>
 ### fetch_workouts(...)
 
 ```typescript
-fetch_workouts(opts: { startDate: Date; endDate: Date; }) => Promise<WorkoutResults>
+fetch_workouts(opts: { start_date: Date; end_date: Date; }) => Promise<WorkoutResults>
 ```
 
-| Param      | Type                                                                                     |
-| ---------- | ---------------------------------------------------------------------------------------- |
-| **`opts`** | <code>{ startDate: <a href="#date">Date</a>; endDate: <a href="#date">Date</a>; }</code> |
+| Param      | Type                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------ |
+| **`opts`** | <code>{ start_date: <a href="#date">Date</a>; end_date: <a href="#date">Date</a>; }</code> |
 
 **Returns:** <code>Promise&lt;<a href="#workoutresults">WorkoutResults</a>&gt;</code>
 

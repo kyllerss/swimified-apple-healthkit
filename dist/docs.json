@@ -27,12 +27,12 @@
       },
       {
         "name": "fetch_workouts",
-        "signature": "(opts: { startDate: Date; endDate: Date; }) => Promise<WorkoutResults>",
+        "signature": "(opts: { start_date: Date; end_date: Date; }) => Promise<WorkoutResults>",
         "parameters": [
           {
             "name": "opts",
             "docs": "",
-            "type": "{ startDate: Date; endDate: Date; }"
+            "type": "{ start_date: Date; end_date: Date; }"
           }
         ],
         "returns": "Promise<WorkoutResults>",

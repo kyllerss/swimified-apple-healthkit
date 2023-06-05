@@ -78,10 +78,8 @@ fetch_workouts(opts: { startDate: Date; endDate: Date; }) => Promise<WorkoutResu
 | **`source_bundle_id`**    | <code>string</code>                                             |
 | **`device`**              | <code><a href="#deviceinformation">DeviceInformation</a></code> |
 | **`HKWorkoutActivityId`** | <code>number</code>                                             |
-| **`HKWorkoutEvents`**     | <code>HKWorkoutEvent[]</code>                                   |
+| **`HKWorkoutActivities`** | <code>HKWorkoutActivity[]</code>                                |
 | **`CLLocations`**         | <code>CLLocation[]</code>                                       |
-| **`HKLapLength`**         | <code>number</code>                                             |
-| **`HKSwimLocationType`**  | <code>number</code>                                             |
 
 
 #### Date
@@ -144,6 +142,19 @@ Enables basic storage and retrieval of dates and times.
 | **`manufacturer`**     | <code>string</code> |
 | **`hardware_version`** | <code>string</code> |
 | **`software_version`** | <code>string</code> |
+
+
+#### HKWorkoutActivity
+
+| Prop                        | Type                                  |
+| --------------------------- | ------------------------------------- |
+| **`uuid`**                  | <code>string</code>                   |
+| **`start_date`**            | <code><a href="#date">Date</a></code> |
+| **`end_date`**              | <code><a href="#date">Date</a></code> |
+| **`HKWorkoutEvents`**       | <code>HKWorkoutEvent[]</code>         |
+| **`HKLapLength`**           | <code>number</code>                   |
+| **`HKSwimLocationType`**    | <code>number</code>                   |
+| **`HKWorkoutActivityType`** | <code>number</code>                   |
 
 
 #### HKWorkoutEvent

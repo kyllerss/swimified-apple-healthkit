@@ -136,13 +136,13 @@
           "type": "number"
         },
         {
-          "name": "HKWorkoutEvents",
+          "name": "HKWorkoutActivities",
           "tags": [],
           "docs": "",
           "complexTypes": [
-            "HKWorkoutEvent"
+            "HKWorkoutActivity"
           ],
-          "type": "HKWorkoutEvent[]"
+          "type": "HKWorkoutActivity[]"
         },
         {
           "name": "CLLocations",
@@ -152,20 +152,6 @@
             "CLLocation"
           ],
           "type": "CLLocation[]"
-        },
-        {
-          "name": "HKLapLength",
-          "tags": [],
-          "docs": "",
-          "complexTypes": [],
-          "type": "number | undefined"
-        },
-        {
-          "name": "HKSwimLocationType",
-          "tags": [],
-          "docs": "",
-          "complexTypes": [],
-          "type": "number"
         }
       ]
     },
@@ -982,6 +968,70 @@
           "docs": "",
           "complexTypes": [],
           "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "HKWorkoutActivity",
+      "slug": "hkworkoutactivity",
+      "docs": "",
+      "tags": [],
+      "methods": [],
+      "properties": [
+        {
+          "name": "uuid",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "string"
+        },
+        {
+          "name": "start_date",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "Date"
+          ],
+          "type": "Date"
+        },
+        {
+          "name": "end_date",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "Date"
+          ],
+          "type": "Date"
+        },
+        {
+          "name": "HKWorkoutEvents",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "HKWorkoutEvent"
+          ],
+          "type": "HKWorkoutEvent[]"
+        },
+        {
+          "name": "HKLapLength",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "number | undefined"
+        },
+        {
+          "name": "HKSwimLocationType",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "number"
+        },
+        {
+          "name": "HKWorkoutActivityType",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "number"
         }
       ]
     },

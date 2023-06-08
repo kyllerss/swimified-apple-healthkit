@@ -47,7 +47,8 @@ export interface HKWorkoutEvent {
     type: number,
     start_timestamp: Date,
     end_timestamp: Date,
-    stroke_style: number
+    stroke_style: number,
+    swolf: string
 }
 
 export interface CLLocation {

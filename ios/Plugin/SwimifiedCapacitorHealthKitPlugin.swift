@@ -207,6 +207,13 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         } else {
             stroke_style = .unknown
         }
+
+        var swolf: String;
+        if let swolf_tmp = event.metadata?[HKMetadataKeySWOLFScore] as? String {
+            swolf = swolf_tmp
+        } else {
+            swolf = 0
+        }
         
         var to_return = JSObject()
         
@@ -214,6 +221,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         to_return["start_timestamp"] = start_timestamp
         to_return["end_timestamp"] = end_timestamp
         to_return["stroke_style"] = stroke_style.rawValue
+        to_return["swolf"] = swolf
         
         return to_return
     }

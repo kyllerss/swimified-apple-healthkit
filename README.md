@@ -165,6 +165,7 @@ Enables basic storage and retrieval of dates and times.
 | **`start_timestamp`** | <code><a href="#date">Date</a></code> |
 | **`end_timestamp`**   | <code><a href="#date">Date</a></code> |
 | **`stroke_style`**    | <code>number</code>                   |
+| **`swolf`**           | <code>string</code>                   |
 
 
 #### CLLocation

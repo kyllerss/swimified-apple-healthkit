@@ -201,18 +201,13 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         let type: HKWorkoutEventType = event.type
         let start_timestamp: Date = event.dateInterval.start
         let end_timestamp: Date = event.dateInterval.end
-        var stroke_style: HKSwimmingStrokeStyle;
-        if let stroke_style_tmp = event.metadata?[HKMetadataKeySwimmingStrokeStyle] as? HKSwimmingStrokeStyle {
-            stroke_style = stroke_style_tmp
-        } else {
-            stroke_style = .unknown
-        }
+        var stroke_style = event.metadata?[HKMetadataKeySwimmingStrokeStyle] as? NSNumber
 
-        var swolf: String;
-        if let swolf_tmp = event.metadata?[HKMetadataKeySWOLFScore] as? String {
-            swolf = swolf_tmp
+        var swolf: NSNumber?;
+        if #available(iOS 16.0, *) {
+            swolf = event.metadata?[HKMetadataKeySWOLFScore] as? NSNumber
         } else {
-            swolf = 0
+            swolf = nil
         }
         
         var to_return = JSObject()
@@ -220,7 +215,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         to_return["type"] = type.rawValue
         to_return["start_timestamp"] = start_timestamp
         to_return["end_timestamp"] = end_timestamp
-        to_return["stroke_style"] = stroke_style.rawValue
+        to_return["stroke_style"] = stroke_style
         to_return["swolf"] = swolf
         
         return to_return

@@ -2,3 +2,4 @@ node_modules/
 xcuserdata/
 *.xcscmblueprint
 *.xccheckout
+*.DS_Store

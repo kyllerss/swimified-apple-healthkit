@@ -155,6 +155,37 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                         events.append(generate_event_output(event: event))
                     }
                     
+                    // heart rate data
+                    let heart_rate_type = HKQuantityType.quantityType(forIdentifier: .heartRate)!
+                    let predicate = HKQuery.predicateForSamples(withStart: activity.startDate,
+                                                                end: activity.endDate,
+                                                                options: .strictStartDate)
+                    
+                    var heart_rate_data: [JSObject] = []
+                    let query = HKSampleQuery(sampleType: heart_rate_type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { (query, samples, error) in
+                        
+                        guard let heart_rate_samples = samples as? [HKQuantitySample] else { return }
+                                                
+                        for sample in heart_rate_samples {
+                            
+                            let bpm = sample.quantity.doubleValue(for: HKUnit(from: "count/min"))
+
+                            var js_obj = JSObject()
+                            js_obj["start_date"] = sample.startDate
+                            js_obj["end_date"] = sample.endDate
+                            js_obj["motion_context"] = sample.metadata?[HKMetadataKeyHeartRateMotionContext] as? NSNumber
+                            js_obj["heart_rate"] = bpm
+                            
+                            heart_rate_data.append(js_obj)
+                            
+                            print("------------->")
+                            print(js_obj)
+                        }
+                    }
+                    
+                    healthStore.execute(query)
+
+                    // workout data
                     var js_obj = JSObject()
                     
                     js_obj["uuid"] = uuid.uuidString
@@ -164,6 +195,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                     js_obj["HKLapLength"] = lap_length?.doubleValue(for: .meter())
                     js_obj["HKSwimLocationType"] = location_type.rawValue
                     js_obj["HKWorkoutActivityType"] = Int(workout_config.activityType.rawValue)
+                    js_obj["heart_rate_data"] = heart_rate_data
                     
                     activities_obj.append(js_obj)
                 }
@@ -195,7 +227,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
 
         return output
      }
-
+    
     func generate_event_output(event: HKWorkoutEvent) -> JSObject {
         
         let type: HKWorkoutEventType = event.type

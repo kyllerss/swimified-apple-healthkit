@@ -177,9 +177,6 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                             js_obj["heart_rate"] = bpm
                             
                             heart_rate_data.append(js_obj)
-                            
-                            print("------------->")
-                            print(js_obj)
                         }
                     }
                     

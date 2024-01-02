@@ -1,6 +1,6 @@
 {
   "name": "swimified-apple-healthkit",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Swimified-specific Capacitor plugin for accessing Apple HealthKit workout data.",
   "main": "dist/plugin.cjs.js",
   "type": "module",

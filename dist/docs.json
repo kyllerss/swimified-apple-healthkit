@@ -1032,6 +1032,15 @@
           "docs": "",
           "complexTypes": [],
           "type": "number"
+        },
+        {
+          "name": "heart_rate_data",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "HeartRateData"
+          ],
+          "type": "HeartRateData[]"
         }
       ]
     },
@@ -1076,6 +1085,47 @@
         },
         {
           "name": "swolf",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "HeartRateData",
+      "slug": "heartratedata",
+      "docs": "",
+      "tags": [],
+      "methods": [],
+      "properties": [
+        {
+          "name": "start_date",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "Date"
+          ],
+          "type": "Date"
+        },
+        {
+          "name": "end_date",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "Date"
+          ],
+          "type": "Date"
+        },
+        {
+          "name": "motion_context",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "number"
+        },
+        {
+          "name": "heart_rate",
           "tags": [],
           "docs": "",
           "complexTypes": [],

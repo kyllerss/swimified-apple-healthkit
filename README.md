@@ -155,6 +155,7 @@ Enables basic storage and retrieval of dates and times.
 | **`HKLapLength`**           | <code>number</code>                   |
 | **`HKSwimLocationType`**    | <code>number</code>                   |
 | **`HKWorkoutActivityType`** | <code>number</code>                   |
+| **`heart_rate_data`**       | <code>HeartRateData[]</code>          |
 
 
 #### HKWorkoutEvent
@@ -166,6 +167,16 @@ Enables basic storage and retrieval of dates and times.
 | **`end_timestamp`**   | <code><a href="#date">Date</a></code> |
 | **`stroke_style`**    | <code>number</code>                   |
 | **`swolf`**           | <code>string</code>                   |
+
+
+#### HeartRateData
+
+| Prop                 | Type                                  |
+| -------------------- | ------------------------------------- |
+| **`start_date`**     | <code><a href="#date">Date</a></code> |
+| **`end_date`**       | <code><a href="#date">Date</a></code> |
+| **`motion_context`** | <code>number</code>                   |
+| **`heart_rate`**     | <code>string</code>                   |
 
 
 #### CLLocation

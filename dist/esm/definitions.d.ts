@@ -28,6 +28,12 @@ export interface DeviceInformation {
     hardware_version: string;
     software_version: string;
 }
+export interface HeartRateData {
+    start_date: Date;
+    end_date: Date;
+    motion_context: number;
+    heart_rate: string;
+}
 export interface HKWorkoutActivity {
     uuid: string;
     start_date: Date;
@@ -36,6 +42,7 @@ export interface HKWorkoutActivity {
     HKLapLength?: number;
     HKSwimLocationType: number;
     HKWorkoutActivityType: number;
+    heart_rate_data: HeartRateData[];
 }
 export interface HKWorkoutEvent {
     type: number;

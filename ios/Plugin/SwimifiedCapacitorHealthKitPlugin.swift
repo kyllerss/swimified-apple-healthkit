@@ -156,32 +156,13 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                     }
                     
                     // heart rate data
-                    let heart_rate_type = HKQuantityType.quantityType(forIdentifier: .heartRate)!
-                    let predicate = HKQuery.predicateForSamples(withStart: activity.startDate,
-                                                                end: activity.endDate,
-                                                                options: .strictStartDate)
-                    
-                    var heart_rate_data: [JSObject] = []
-                    let query = HKSampleQuery(sampleType: heart_rate_type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { (query, samples, error) in
-                        
-                        guard let heart_rate_samples = samples as? [HKQuantitySample] else { return }
-                                                
-                        for sample in heart_rate_samples {
-                            
-                            let bpm = sample.quantity.doubleValue(for: HKUnit(from: "count/min"))
-
-                            var js_obj = JSObject()
-                            js_obj["start_date"] = sample.startDate
-                            js_obj["end_date"] = sample.endDate
-                            js_obj["motion_context"] = sample.metadata?[HKMetadataKeyHeartRateMotionContext] as? NSNumber
-                            js_obj["heart_rate"] = bpm
-                            
-                            heart_rate_data.append(js_obj)
-                        }
+                    let heart_rate_data: [JSObject]
+                    do {
+                        heart_rate_data = try await get_heart_rate(start_date: start_date, end_date: end_date!, workout: sample)
+                    } catch {
+                        heart_rate_data = []
                     }
                     
-                    healthStore.execute(query)
-
                     // workout data
                     var js_obj = JSObject()
                     
@@ -196,6 +177,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                     
                     activities_obj.append(js_obj)
                 }
+                
             } else {
                 return nil // signals an error to be sent to client
             }
@@ -221,16 +203,131 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
 
             output.append(workout_obj)
         }
-
+        
         return output
      }
+    
+    @available(iOS 15.0, *)
+    private func get_heart_rate(start_date: Date, end_date: Date, workout: HKWorkout) async throws -> [JSObject] {
+        try await withCheckedThrowingContinuation { continuation in
+            get_heart_rate(start_date: start_date, end_date: end_date, workout: workout) { result in
+                continuation.resume(with: result)
+            }
+        }
+    }
+    
+    @available(iOS 15.0, *)
+    private func get_heart_rate(start_date: Date, end_date: Date, workout: HKWorkout, completion: @escaping (Result<[JSObject], Error>) -> Void) {
+        
+        let heart_rate_type = HKQuantityType.quantityType(forIdentifier: .heartRate)!
+        
+//        let for_workout = HKQuery.predicateForObjects(from: workout)
+        let for_workout = HKQuery.predicateForSamples(withStart: start_date, end: end_date, options: HKQueryOptions.strictStartDate)
+        let heart_rate_descriptor = HKQueryDescriptor(sampleType: heart_rate_type, predicate: for_workout)
+                
+        let query = HKSampleQuery(queryDescriptors: [heart_rate_descriptor], limit: HKObjectQueryNoLimit) { (query, samples, error) in
+            
+            if let resultError = error {
+                return completion(.failure(resultError))
+            }
+            
+            guard let samples = samples else {
+                fatalError("Unexpected error: \(error!.localizedDescription)")
+            }
+            
+            Task {
+                
+                var hr_entries: [JSObject] = []
+                for sample in samples {
+                        
+                    guard let sample = sample as? HKDiscreteQuantitySample else {
+                        fatalError("Unexpected Sample type")
+                    }
+                    
+                    var series_data: [JSObject] = []
+                    if (sample.count == 1) {
+
+                        let bpm = sample.quantity.doubleValue(for: HKUnit(from: "count/min"))
+
+                        var js_obj = JSObject()
+                        js_obj["start_date"] = sample.startDate
+                        js_obj["end_date"] = sample.endDate
+                        js_obj["motion_context"] = sample.metadata?[HKMetadataKeyHeartRateMotionContext] as? NSNumber
+                        js_obj["heart_rate"] = bpm
+
+                        series_data.append(js_obj)
+
+                    } else {
+
+                        // query series data
+                        do {
+                            
+                            series_data = try await self.get_heart_rate_series_data(start_date: start_date, end_date: end_date, series_sample: sample)
+                            
+                        } catch {
+                            series_data = []
+                        }
+                    }
+                    
+                    hr_entries.append(contentsOf: series_data)
+                }
+                
+                completion(.success(hr_entries))
+            }
+        }
+        
+        healthStore.execute(query)
+    }
+
+    @available(iOS 15.0, *)
+    private func get_heart_rate_series_data(start_date: Date, end_date: Date, series_sample: HKDiscreteQuantitySample) async throws -> [JSObject] {
+        try await withCheckedThrowingContinuation { continuation in
+            get_heart_rate_series_data(start_date: start_date, end_date: end_date, series_sample: series_sample) { result in
+                continuation.resume(with: result)
+            }
+        }
+    }
+    
+    @available(iOS 15.0, *)
+    private func get_heart_rate_series_data(start_date: Date, end_date: Date, series_sample: HKDiscreteQuantitySample, completion: @escaping (Result<[JSObject], Error>) -> Void) {
+        
+        let heart_rate_type = HKQuantityType.quantityType(forIdentifier: .heartRate)!
+        let in_series_sample = HKQuery.predicateForObject(with: series_sample.uuid)
+        var elements: [JSObject] = []
+        let detail_query = HKQuantitySeriesSampleQuery(quantityType: heart_rate_type, predicate: in_series_sample)
+        {query, quantity, dateInterval, HKSample, done, error in
+                        
+            guard let quantity = quantity, let dateInterval = dateInterval else {
+                fatalError("Unexpected error fetching series data: \(error!.localizedDescription)")
+            }
+            
+            let bpm = quantity.doubleValue(for: HKUnit(from: "count/min"))
+            
+            var js_obj = JSObject()
+            js_obj["start_date"] = dateInterval.start
+            js_obj["end_date"] = dateInterval.end
+            js_obj["heart_rate"] = bpm
+
+//            if let sample = sample as? [HKQuantitySample] {
+//                js_obj["motion_context"] = sample.metadata?[HKMetadataKeyHeartRateMotionContext] as? NSNumber
+//            }
+            
+            elements.append(js_obj)
+
+            if done {
+                completion(.success(elements))
+            }
+        }
+        
+        healthStore.execute(detail_query)
+   }
     
     func generate_event_output(event: HKWorkoutEvent) -> JSObject {
         
         let type: HKWorkoutEventType = event.type
         let start_timestamp: Date = event.dateInterval.start
         let end_timestamp: Date = event.dateInterval.end
-        var stroke_style = event.metadata?[HKMetadataKeySwimmingStrokeStyle] as? NSNumber
+        let stroke_style = event.metadata?[HKMetadataKeySwimmingStrokeStyle] as? NSNumber
 
         var swolf: NSNumber?;
         if #available(iOS 16.0, *) {

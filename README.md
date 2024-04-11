@@ -156,6 +156,8 @@ Enables basic storage and retrieval of dates and times.
 | **`HKSwimLocationType`**    | <code>number</code>                   |
 | **`HKWorkoutActivityType`** | <code>number</code>                   |
 | **`heart_rate_data`**       | <code>HeartRateData[]</code>          |
+| **`stroke_count_data`**     | <code>StrokeCountData[]</code>        |
+| **`vo2max_data`**           | <code>VO2MaxData[]</code>             |
 
 
 #### HKWorkoutEvent
@@ -177,6 +179,25 @@ Enables basic storage and retrieval of dates and times.
 | **`end_date`**       | <code><a href="#date">Date</a></code> |
 | **`motion_context`** | <code>number</code>                   |
 | **`heart_rate`**     | <code>string</code>                   |
+
+
+#### StrokeCountData
+
+| Prop             | Type                                  |
+| ---------------- | ------------------------------------- |
+| **`start_time`** | <code><a href="#date">Date</a></code> |
+| **`end_time`**   | <code><a href="#date">Date</a></code> |
+| **`count`**      | <code>number</code>                   |
+
+
+#### VO2MaxData
+
+| Prop                         | Type                                  |
+| ---------------------------- | ------------------------------------- |
+| **`start_time`**             | <code><a href="#date">Date</a></code> |
+| **`end_time`**               | <code><a href="#date">Date</a></code> |
+| **`vo2max_ml_kg_div_min`**   | <code>number</code>                   |
+| **`vo2max_ml_kg_times_min`** | <code>number</code>                   |
 
 
 #### CLLocation

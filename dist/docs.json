@@ -1041,6 +1041,24 @@
             "HeartRateData"
           ],
           "type": "HeartRateData[]"
+        },
+        {
+          "name": "stroke_count_data",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "StrokeCountData"
+          ],
+          "type": "StrokeCountData[]"
+        },
+        {
+          "name": "vo2max_data",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "VO2MaxData"
+          ],
+          "type": "VO2MaxData[]"
         }
       ]
     },
@@ -1130,6 +1148,81 @@
           "docs": "",
           "complexTypes": [],
           "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "StrokeCountData",
+      "slug": "strokecountdata",
+      "docs": "",
+      "tags": [],
+      "methods": [],
+      "properties": [
+        {
+          "name": "start_time",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "Date"
+          ],
+          "type": "Date"
+        },
+        {
+          "name": "end_time",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "Date"
+          ],
+          "type": "Date"
+        },
+        {
+          "name": "count",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "number"
+        }
+      ]
+    },
+    {
+      "name": "VO2MaxData",
+      "slug": "vo2maxdata",
+      "docs": "",
+      "tags": [],
+      "methods": [],
+      "properties": [
+        {
+          "name": "start_time",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "Date"
+          ],
+          "type": "Date"
+        },
+        {
+          "name": "end_time",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [
+            "Date"
+          ],
+          "type": "Date"
+        },
+        {
+          "name": "vo2max_ml_kg_div_min",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "number"
+        },
+        {
+          "name": "vo2max_ml_kg_times_min",
+          "tags": [],
+          "docs": "",
+          "complexTypes": [],
+          "type": "number"
         }
       ]
     },

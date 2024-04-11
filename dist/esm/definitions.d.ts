@@ -28,6 +28,17 @@ export interface DeviceInformation {
     hardware_version: string;
     software_version: string;
 }
+export interface StrokeCountData {
+    start_time: Date;
+    end_time: Date;
+    count: number;
+}
+export interface VO2MaxData {
+    start_time: Date;
+    end_time: Date;
+    vo2max_ml_kg_div_min: number;
+    vo2max_ml_kg_times_min: number;
+}
 export interface HeartRateData {
     start_date: Date;
     end_date: Date;
@@ -43,6 +54,8 @@ export interface HKWorkoutActivity {
     HKSwimLocationType: number;
     HKWorkoutActivityType: number;
     heart_rate_data: HeartRateData[];
+    stroke_count_data: StrokeCountData[];
+    vo2max_data: VO2MaxData[];
 }
 export interface HKWorkoutEvent {
     type: number;

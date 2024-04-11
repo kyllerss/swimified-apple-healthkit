@@ -44,6 +44,8 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         let readTypes: Set<HKSampleType> = [
                                                 HKWorkoutType.workoutType(),
                                                 HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier.heartRate)!,
+                                                HKQuantityType.quantityType(forIdentifier: .swimmingStrokeCount)!,
+                                                HKQuantityType.quantityType(forIdentifier: .vo2Max)!,
                                                 HKSeriesType.workoutRoute()
                                            ];
         
@@ -131,6 +133,21 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             workout_obj["device"] = get_device_information(device: sample.device)
             workout_obj["HKWorkoutActivityTypeId"] = Int(sample.workoutActivityType.rawValue)
 
+            // process stroke count data
+            let stroke_count_data: [JSObject]
+            do {
+                stroke_count_data = try await get_stroke_count_data(sample)
+            } catch {
+                stroke_count_data = []
+            }
+
+            let vo2max_data: [JSObject]
+            do {
+                vo2max_data = try await get_vo2max_data(sample)
+            } catch {
+                vo2max_data = []
+            }
+
             /*
              * NOTE: In case of a simple swim, there is one entry.
              *       In case of triathlon, multiple entries of which one is a swim.
@@ -174,6 +191,8 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                     js_obj["HKSwimLocationType"] = location_type.rawValue
                     js_obj["HKWorkoutActivityType"] = Int(workout_config.activityType.rawValue)
                     js_obj["heart_rate_data"] = heart_rate_data
+                    js_obj["stroke_count_data"] = stroke_count_data
+                    js_obj["vo2max_data"] = vo2max_data
                     
                     activities_obj.append(js_obj)
                 }
@@ -207,6 +226,94 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         return output
      }
     
+    private func get_stroke_count_data(_ workout: HKWorkout) async throws -> [JSObject] {
+        try await withCheckedThrowingContinuation { continuation in
+            get_stroke_count(for: workout) { result in
+                continuation.resume(with: result)
+            }
+        }
+    } 
+    private func get_stroke_count(for workout: HKWorkout, completion: @escaping (Result<[JSObject], Error>) -> Void) {
+        
+        var to_return: [JSObject] = []
+        let start_date = workout.startDate;
+        let end_date = workout.endDate;
+
+        let predicate = HKQuery.predicateForSamples(withStart: start_date, end: end_date, options: .strictStartDate)
+        
+        let stroke_count_type = HKQuantityType.quantityType(forIdentifier: .swimmingStrokeCount)!
+        let query = HKSampleQuery(sampleType: stroke_count_type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { (query, samples, error) in
+        
+            guard let stroke_count_samples = samples as? [HKQuantitySample], error == nil else {
+                
+                return completion(.failure(error!))
+            }
+            
+            for sample in stroke_count_samples {
+                
+                let value = sample.quantity.doubleValue(for: HKUnit.count())
+                let start_time = sample.startDate
+                let end_time = sample.endDate
+
+                var json_object = JSObject()
+                json_object["count"] = value
+                json_object["start_time"] = start_time
+                json_object["end_time"] = end_time
+                                
+                to_return.append(json_object)
+            }
+            
+            return completion(.success(to_return))
+        }
+        
+        healthStore.execute(query)
+    }
+
+    private func get_vo2max_data(_ workout: HKWorkout) async throws -> [JSObject] {
+        try await withCheckedThrowingContinuation { continuation in
+            get_vo2max(for: workout) { result in
+                continuation.resume(with: result)
+            }
+        }
+    }
+    private func get_vo2max(for workout: HKWorkout, completion: @escaping (Result<[JSObject], Error>) -> Void) {
+        
+        var to_return: [JSObject] = []
+        let start_date = workout.startDate;
+        let end_date = workout.endDate;
+
+        let predicate = HKQuery.predicateForSamples(withStart: start_date, end: end_date, options: .strictStartDate)
+        
+        let vo2max_type = HKQuantityType.quantityType(forIdentifier: .vo2Max)!
+        let query = HKSampleQuery(sampleType: vo2max_type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { (query, samples, error) in
+        
+            guard let vo2max_samples = samples as? [HKQuantitySample], error == nil else {
+                
+                return completion(.failure(error!))
+            }
+            
+            for sample in vo2max_samples {
+                
+                let value_per_min = sample.quantity.doubleValue(for: HKUnit(from: "ml/kg/min"))
+                let value_times_min = sample.quantity.doubleValue(for: HKUnit(from: "ml/kg*min"))
+                let start_time = sample.startDate
+                let end_time = sample.endDate
+
+                var json_object = JSObject()
+                json_object["vo2max_ml_kg_div_min"] = value_per_min
+                json_object["vo2max_ml_kg_times_min"] = value_times_min
+                json_object["start_time"] = start_time
+                json_object["end_time"] = end_time
+                                
+                to_return.append(json_object)
+            }
+            
+            return completion(.success(to_return))
+        }
+        
+        healthStore.execute(query)
+    }
+    
     @available(iOS 15.0, *)
     private func get_heart_rate(start_date: Date, end_date: Date, workout: HKWorkout) async throws -> [JSObject] {
         try await withCheckedThrowingContinuation { continuation in
@@ -221,7 +328,6 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         
         let heart_rate_type = HKQuantityType.quantityType(forIdentifier: .heartRate)!
         
-//        let for_workout = HKQuery.predicateForObjects(from: workout)
         let for_workout = HKQuery.predicateForSamples(withStart: start_date, end: end_date, options: HKQueryOptions.strictStartDate)
         let heart_rate_descriptor = HKQueryDescriptor(sampleType: heart_rate_type, predicate: for_workout)
                 
@@ -307,10 +413,6 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             js_obj["start_date"] = dateInterval.start
             js_obj["end_date"] = dateInterval.end
             js_obj["heart_rate"] = bpm
-
-//            if let sample = sample as? [HKQuantitySample] {
-//                js_obj["motion_context"] = sample.metadata?[HKMetadataKeyHeartRateMotionContext] as? NSNumber
-//            }
             
             elements.append(js_obj)
 

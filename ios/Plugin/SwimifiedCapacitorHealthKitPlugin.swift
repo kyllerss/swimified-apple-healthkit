@@ -338,7 +338,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             }
             
             guard let samples = samples else {
-                fatalError("Unexpected error: \(error!.localizedDescription)")
+                return completion(.success([])) // no results, return empty list
             }
             
             Task {
@@ -347,7 +347,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                 for sample in samples {
                         
                     guard let sample = sample as? HKDiscreteQuantitySample else {
-                        fatalError("Unexpected Sample type")
+                        continue // discard any unexpected types
                     }
                     
                     var series_data: [JSObject] = []
@@ -403,8 +403,17 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         let detail_query = HKQuantitySeriesSampleQuery(quantityType: heart_rate_type, predicate: in_series_sample)
         {query, quantity, dateInterval, HKSample, done, error in
                         
+            if let resultError = error {
+                print("Error when fetching hr series data: ", resultError)
+                return completion(.success(elements)) // return results so far
+            }
+                
             guard let quantity = quantity, let dateInterval = dateInterval else {
-                fatalError("Unexpected error fetching series data: \(error!.localizedDescription)")
+
+                if done {
+                    completion(.success(elements))
+                }
+                return // next iteration (if any)
             }
             
             let bpm = quantity.doubleValue(for: HKUnit(from: "count/min"))
@@ -509,7 +518,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         var queryLocations = [CLLocation]()
         let query = HKWorkoutRouteQuery(route: route) { query, locations, done, error in
             if let resultError = error {
-                return completion(.failure(resultError))
+                return completion(.success(queryLocations)) // terminate w/ results so far
             }
             if let locationBatch = locations {
                 queryLocations.append(contentsOf: locationBatch)

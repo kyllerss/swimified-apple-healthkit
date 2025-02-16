@@ -17,6 +17,24 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         case workoutRouteRequestFailed
     }
     
+    private func reorder_dates(start: Date, end: Date) -> (start: Date, end: Date) {
+        
+        var startDate = start
+        var endDate = end
+        
+        if startDate > endDate {
+            
+            swap(&startDate, &endDate)
+        }
+        
+        if startDate == endDate {
+            
+            endDate = endDate.addingTimeInterval(1)
+        }
+        
+        return (startDate, endDate)
+    }
+    
     @objc func is_available(_ call: CAPPluginCall) {
         
         if #available(iOS 16.0, *) {
@@ -41,14 +59,27 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
         
         let writeTypes: Set<HKSampleType> = []
-        let readTypes: Set<HKSampleType> = [
-                                                HKWorkoutType.workoutType(),
-                                                HKQuantityType.quantityType(forIdentifier: HKQuantityTypeIdentifier.heartRate)!,
-                                                HKQuantityType.quantityType(forIdentifier: .swimmingStrokeCount)!,
-                                                HKQuantityType.quantityType(forIdentifier: .vo2Max)!,
-                                                HKSeriesType.workoutRoute()
-                                           ];
+        var readTypes: Set<HKSampleType> = [
+            HKWorkoutType.workoutType(),
+            HKSeriesType.workoutRoute()
+        ]
         
+        if let hr_type = HKQuantityType.quantityType(forIdentifier:
+            .heartRate) {
+            
+            readTypes.insert(hr_type)
+        }
+        
+        if let sc_type = HKQuantityType.quantityType(forIdentifier: .swimmingStrokeCount) {
+            
+            readTypes.insert(sc_type)
+        }
+        
+        if let vo2Max_type = HKQuantityType.quantityType(forIdentifier: .vo2Max) {
+            
+            readTypes.insert(vo2Max_type)
+        }
+                                                
         healthStore.requestAuthorization(toShare: writeTypes, read: readTypes) { success, _ in
             
             if !success {
@@ -63,12 +94,16 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     
     @objc func fetch_workouts(_ call: CAPPluginCall) {
         
-        guard let startDate = call.getDate("start_date") else {
+        guard var startDate = call.getDate("start_date") else {
             return call.reject("Parameter start_date is required!")
         }
-        guard let endDate = call.getDate("end_date") else {
+        guard var endDate = call.getDate("end_date") else {
             return call.reject("Parameter end_date is required!")
         }
+        
+        let reordered_dates = reorder_dates(start: startDate, end: endDate)
+        startDate = reordered_dates.start
+        endDate = reordered_dates.end
         
         let limit: Int = HKObjectQueryNoLimit
         
@@ -99,13 +134,13 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     
     func generate_sample_output(results: [HKSample]?) async -> [JSObject]? {
         
-        if results == nil {
+        guard let results = results else {
             return []
         }
 
         var output: [JSObject] = []
 
-        for result in results! {
+        for result in results {
 
             guard let sample = result as? HKWorkout else {
                 continue
@@ -161,10 +196,18 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                     
                     let lap_length = workout_config.lapLength
                     let location_type = workout_config.swimmingLocationType
-                    let start_date = activity.startDate
-                    let end_date = activity.endDate
+                    var start_date = activity.startDate
+                    guard var end_date = activity.endDate else {
+                        
+                        // empty end_date implies still active or interrupted activity - skip
+                        continue
+                    }
                     let uuid = activity.uuid
-                    
+                                        
+                    let reordered_dates = reorder_dates(start: start_date, end: end_date)
+                    start_date = reordered_dates.start
+                    end_date = reordered_dates.end
+
                     // events
                     var events: [JSObject] = []
                     for event in activity.workoutEvents {
@@ -175,7 +218,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                     // heart rate data
                     let heart_rate_data: [JSObject]
                     do {
-                        heart_rate_data = try await get_heart_rate(start_date: start_date, end_date: end_date!, workout: sample)
+                        heart_rate_data = try await get_heart_rate(start_date: start_date, end_date: end_date, workout: sample)
                     } catch {
                         heart_rate_data = []
                     }
@@ -236,19 +279,38 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     private func get_stroke_count(for workout: HKWorkout, completion: @escaping (Result<[JSObject], Error>) -> Void) {
         
         var to_return: [JSObject] = []
-        let start_date = workout.startDate;
-        let end_date = workout.endDate;
+        var start_date = workout.startDate;
+        var end_date = workout.endDate;
+        
+        let reordered_dates = reorder_dates(start: start_date, end: end_date)
+        start_date = reordered_dates.start
+        end_date = reordered_dates.end
 
         let predicate = HKQuery.predicateForSamples(withStart: start_date, end: end_date, options: .strictStartDate)
         
-        let stroke_count_type = HKQuantityType.quantityType(forIdentifier: .swimmingStrokeCount)!
+        guard let stroke_count_type = HKQuantityType.quantityType(forIdentifier: .swimmingStrokeCount) else {
+        
+            return completion(.success([])) // stroke count not supported
+        }
+        
         let query = HKSampleQuery(sampleType: stroke_count_type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { (query, samples, error) in
         
-            guard let stroke_count_samples = samples as? [HKQuantitySample], error == nil else {
+            if let error = error {
                 
-                return completion(.failure(error!))
+                return completion(.failure(error))
             }
             
+            guard let stroke_count_samples = samples as? [HKQuantitySample] else {
+
+                let castError = NSError(
+                    domain: "com.swimified.capacitor.healthkit",
+                    code: 1001,
+                    userInfo: [NSLocalizedDescriptionKey : "Could not cast stroke count samples to [HKQuantitySample]"]
+                )
+                
+                return completion(.failure(castError))
+            }
+                            
             for sample in stroke_count_samples {
                 
                 let value = sample.quantity.doubleValue(for: HKUnit.count())
@@ -279,17 +341,36 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     private func get_vo2max(for workout: HKWorkout, completion: @escaping (Result<[JSObject], Error>) -> Void) {
         
         var to_return: [JSObject] = []
-        let start_date = workout.startDate;
-        let end_date = workout.endDate;
+        var start_date = workout.startDate;
+        var end_date = workout.endDate;
+
+        let reordered_dates = reorder_dates(start: start_date, end: end_date)
+        start_date = reordered_dates.start
+        end_date = reordered_dates.end
 
         let predicate = HKQuery.predicateForSamples(withStart: start_date, end: end_date, options: .strictStartDate)
         
-        let vo2max_type = HKQuantityType.quantityType(forIdentifier: .vo2Max)!
+        guard let vo2max_type = HKQuantityType.quantityType(forIdentifier: .vo2Max) else {
+            
+            return completion(.success([])) // vo2max not supported
+        }
+        
         let query = HKSampleQuery(sampleType: vo2max_type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { (query, samples, error) in
         
-            guard let vo2max_samples = samples as? [HKQuantitySample], error == nil else {
+            if let error = error {
                 
-                return completion(.failure(error!))
+                return completion(.failure(error))
+            }
+            
+            guard let vo2max_samples = samples as? [HKQuantitySample] else {
+
+                let castError = NSError(
+                    domain: "com.swimified.capacitor.healthkit",
+                    code: 1001,
+                    userInfo: [NSLocalizedDescriptionKey : "Could not cast vo2max samples to [HKQuantitySample]"]
+                )
+                
+                return completion(.failure(castError))
             }
             
             for sample in vo2max_samples {
@@ -326,7 +407,14 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     @available(iOS 15.0, *)
     private func get_heart_rate(start_date: Date, end_date: Date, workout: HKWorkout, completion: @escaping (Result<[JSObject], Error>) -> Void) {
         
-        let heart_rate_type = HKQuantityType.quantityType(forIdentifier: .heartRate)!
+        let reordered_dates = reorder_dates(start: start_date, end: end_date)
+        let start_date = reordered_dates.start
+        let end_date = reordered_dates.end
+
+        guard let heart_rate_type = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
+            
+            return completion(.success([])) // hr not supported
+        }
         
         let for_workout = HKQuery.predicateForSamples(withStart: start_date, end: end_date, options: HKQueryOptions.strictStartDate)
         let heart_rate_descriptor = HKQueryDescriptor(sampleType: heart_rate_type, predicate: for_workout)
@@ -397,7 +485,15 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     @available(iOS 15.0, *)
     private func get_heart_rate_series_data(start_date: Date, end_date: Date, series_sample: HKDiscreteQuantitySample, completion: @escaping (Result<[JSObject], Error>) -> Void) {
         
-        let heart_rate_type = HKQuantityType.quantityType(forIdentifier: .heartRate)!
+        let reordered_dates = reorder_dates(start: start_date, end: end_date)
+        var start_date = reordered_dates.start
+        var end_date = reordered_dates.end
+
+        guard let heart_rate_type = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
+        
+            return completion(.success([])) // hr not supported
+        }
+        
         let in_series_sample = HKQuery.predicateForObject(with: series_sample.uuid)
         var elements: [JSObject] = []
         let detail_query = HKQuantitySeriesSampleQuery(quantityType: heart_rate_type, predicate: in_series_sample)
@@ -517,16 +613,20 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     private func get_locations(for route: HKWorkoutRoute, completion: @escaping(Result<[CLLocation], Error>) -> Void) {
         var queryLocations = [CLLocation]()
         let query = HKWorkoutRouteQuery(route: route) { query, locations, done, error in
-            if let resultError = error {
+
+            if error != nil {
                 return completion(.success(queryLocations)) // terminate w/ results so far
             }
+
             if let locationBatch = locations {
                 queryLocations.append(contentsOf: locationBatch)
             }
+
             if done {
                 completion(.success(queryLocations))
             }
         }
+        
         healthStore.execute(query)
     }
 

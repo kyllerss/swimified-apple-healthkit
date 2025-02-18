@@ -374,15 +374,13 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             }
             
             for sample in vo2max_samples {
-                
-                let value_per_min = sample.quantity.doubleValue(for: HKUnit(from: "ml/kg/min"))
-                let value_times_min = sample.quantity.doubleValue(for: HKUnit(from: "ml/kg*min"))
+                                
+                let vo2max_value = sample.quantity.doubleValue(for: HKUnit(from: "ml/kg/min"))
                 let start_time = sample.startDate
                 let end_time = sample.endDate
 
                 var json_object = JSObject()
-                json_object["vo2max_ml_kg_div_min"] = value_per_min
-                json_object["vo2max_ml_kg_times_min"] = value_times_min
+                json_object["vo2max_value"] = vo2max_value
                 json_object["start_time"] = start_time
                 json_object["end_time"] = end_time
                                 

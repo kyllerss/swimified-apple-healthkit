@@ -36,8 +36,7 @@ export interface StrokeCountData {
 export interface VO2MaxData {
     start_time: Date;
     end_time: Date;
-    vo2max_ml_kg_div_min: number;
-    vo2max_ml_kg_times_min: number;
+    vo2max_value: number;
 }
 export interface HeartRateData {
     start_date: Date;

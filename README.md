@@ -192,12 +192,11 @@ Enables basic storage and retrieval of dates and times.
 
 #### VO2MaxData
 
-| Prop                         | Type                                  |
-| ---------------------------- | ------------------------------------- |
-| **`start_time`**             | <code><a href="#date">Date</a></code> |
-| **`end_time`**               | <code><a href="#date">Date</a></code> |
-| **`vo2max_ml_kg_div_min`**   | <code>number</code>                   |
-| **`vo2max_ml_kg_times_min`** | <code>number</code>                   |
+| Prop               | Type                                  |
+| ------------------ | ------------------------------------- |
+| **`start_time`**   | <code><a href="#date">Date</a></code> |
+| **`end_time`**     | <code><a href="#date">Date</a></code> |
+| **`vo2max_value`** | <code>number</code>                   |
 
 
 #### CLLocation

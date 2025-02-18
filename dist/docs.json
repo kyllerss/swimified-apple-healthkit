@@ -1211,14 +1211,7 @@
           "type": "Date"
         },
         {
-          "name": "vo2max_ml_kg_div_min",
-          "tags": [],
-          "docs": "",
-          "complexTypes": [],
-          "type": "number"
-        },
-        {
-          "name": "vo2max_ml_kg_times_min",
+          "name": "vo2max_value",
           "tags": [],
           "docs": "",
           "complexTypes": [],

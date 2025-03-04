@@ -12,9 +12,125 @@ var healthStore = HKHealthStore()
 @objc(SwimifiedCapacitorHealthKitPlugin)
 public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     
+    private var backgroundAnchor: HKQueryAnchor?;
+    private var backgroundStartDate: Date?;
+    
     enum HKSampleError: Error {
         
         case workoutRouteRequestFailed
+    }
+    
+    public override func load() {
+        
+        super.load()
+        
+        self.backgroundAnchor = self.retrieve_background_anchor()
+        
+        let authorized = self.is_authorized()
+        if (authorized) {
+            self.start_background_workout_observer()
+        } else {
+            print("HealthKit not authorized - skipping starting observer query.")
+        }
+    }
+    
+    @objc func initialize_background_observer(_ call: CAPPluginCall) {
+        
+        guard let startDate = call.getDate("start_date") else {
+
+            return call.reject("Parameter start_date is required.")
+        }
+        
+        backgroundStartDate = startDate
+        
+        let shouldResetAnchor = call.getBool( "reset_anchor") ?? false
+        if shouldResetAnchor {
+            
+            backgroundAnchor = nil
+            store_background_anchor(nil) // clear out stored anchor (if any)
+        }
+        
+        call.resolve()
+    }
+
+    private func store_background_anchor(_ anchor: HKQueryAnchor?) {
+        
+        if anchor == nil {
+            
+            UserDefaults.standard.removeObject(forKey: "backgroundAnchorKey")
+            return
+        }
+        
+        do {
+            
+            let data = try NSKeyedArchiver.archivedData(withRootObject: anchor!, requiringSecureCoding: true)
+            UserDefaults.standard.set(data, forKey: "backgroundAnchorKey")
+        } catch {
+            print("Failed to store background anchor in UserDefaults: \(error)")
+        }
+    }
+    
+    private func retrieve_background_anchor() -> HKQueryAnchor? {
+        
+        guard let data = UserDefaults.standard.data(forKey: "backgroundAnchorKey") else {
+            return nil
+        }
+
+        do {
+            
+            let unarchived = try NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data)
+            return unarchived
+        } catch {
+            print("Failed to retrieve background anchor from UserDefults: \(error) ")
+            return nil
+        }
+    }
+    
+    private func start_background_workout_observer() {
+        
+        let workoutType = HKObjectType.workoutType()
+        
+        healthStore.enableBackgroundDelivery(for: workoutType, frequency: .immediate) {success, error in
+        
+            if let error = error {
+                print("Failed to enable background delivery: \(error.localizedDescription)")
+            } else {
+                print( "Background delivery enabled: \(success)")
+            }
+        }
+        
+        let observerQuery = HKObserverQuery(sampleType: workoutType, predicate: nil) {
+            
+            [weak self] _, completionHandler, error in
+            guard let self = self else {return}
+            
+            if let error = error {
+                
+                print("Observer query error: \(error.localizedDescription)")
+                completionHandler()
+                return
+            }
+            
+            self.internal_fetch_workouts(
+                startDate: self.backgroundStartDate,
+                endDate: nil,
+                anchor: self.backgroundAnchor
+            ) { [weak self] workouts, newAnchor in
+                
+                guard let self = self else {return}
+                
+                self.backgroundAnchor = newAnchor
+                self.store_background_anchor(newAnchor)
+                
+                // TODO PROCESS CALL AND STORE IN SERVER
+                print("-----> Retrieved background workouts: \(workouts.count)")
+            }
+            
+            // finalize callback
+            completionHandler()
+        }
+        
+        healthStore.execute(observerQuery)
     }
     
     private func reorder_dates(start: Date, end: Date) -> (start: Date, end: Date) {
@@ -52,6 +168,12 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
     }
     
+    private func is_authorized() -> Bool {
+        
+        let status = healthStore.authorizationStatus(for: HKObjectType.workoutType())
+        return status == .sharingAuthorized
+    }
+    
     @objc public func request_permissions(_ call: CAPPluginCall) {
         
         if !HKHealthStore.isHealthDataAvailable() {
@@ -86,11 +208,64 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                 call.reject("Unable to get needed HealthKit permissions.")
                 return
             }
+            
+            self.start_background_workout_observer() // start listening for changes
+            
             call.resolve()
         }
         
         return;
     }
+    
+    private func internal_fetch_workouts(
+        startDate: Date?,
+        endDate: Date?,
+        anchor: HKQueryAnchor?,
+        completion: @escaping([JSObject], HKQueryAnchor?) -> Void
+    ) {
+    
+        let workoutType = HKObjectType.workoutType()
+        
+        var predicate: NSPredicate?
+        if let start = startDate, let end = endDate {
+            predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        } else if let start = startDate {
+            predicate = HKQuery.predicateForSamples(withStart: start, end: nil, options: .strictStartDate)
+        } else if let end = endDate {
+            predicate = HKQuery.predicateForSamples(withStart: nil, end: end, options: .strictEndDate)
+        }
+        
+        let query = HKAnchoredObjectQuery(
+            type: workoutType,
+            predicate: predicate,
+            anchor: anchor,
+            limit: HKObjectQueryNoLimit
+        ) { [weak self] query, newSamples, deletedSamples, newAnchor, error in
+            
+            guard let self = self else { return }
+            
+            if let error = error {
+                print("Error fetching workouts: \(error.localizedDescription)")
+                completion([], anchor)
+                return
+            }
+            
+            guard let workouts = newSamples as? [HKWorkout], !workouts.isEmpty else {
+                
+                completion([], newAnchor)
+                return
+            }
+
+            Task {
+                
+                let results = await self.generate_sample_output(results: workouts) ?? []
+                completion(results, newAnchor)
+            }
+        }
+        
+        healthStore.execute(query)
+    }
+    
     
     @objc func fetch_workouts(_ call: CAPPluginCall) {
         
@@ -104,32 +279,14 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         let reordered_dates = reorder_dates(start: startDate, end: endDate)
         startDate = reordered_dates.start
         endDate = reordered_dates.end
+
+        internal_fetch_workouts(startDate: startDate, endDate: endDate, anchor: nil) { (workout_results, _) in
         
-        let limit: Int = HKObjectQueryNoLimit
-        
-        let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: HKQueryOptions.strictStartDate)
-        
-        let sampleType: HKSampleType = HKWorkoutType.workoutType()
-        
-        let query = HKSampleQuery(sampleType: sampleType, predicate: predicate, limit: limit, sortDescriptors: nil) {
-            _, results, error in
-            
-            if let error_message = error?.localizedDescription {
-                return call.reject("Unable to fetch Apple HealthKit results. Please consider re-authorizing Apple HealthKit integration. Error message: \(error_message)")
-            }
-            
-            Task {
-                guard let output: [JSObject] = await self.generate_sample_output(results: results) else {
-                    return call.reject("Unable to obtain Apple HealthKit results. Support is limited to iOS version 16 and above.")
-                }
-                
-                call.resolve([
-                    "count": output.count,
-                    "results": output,
-                ])
-             }
+            call.resolve([
+                "count": workout_results.count,
+                "results": workout_results
+            ])
         }
-        healthStore.execute(query)
     }
     
     func generate_sample_output(results: [HKSample]?) async -> [JSObject]? {

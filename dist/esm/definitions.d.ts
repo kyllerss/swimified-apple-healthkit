@@ -5,6 +5,9 @@ export interface SwimifiedCapacitorHealthKitPlugin {
         start_date: Date;
         end_date: Date;
     }): Promise<WorkoutResults>;
+    initialize_background_observer(opts: {
+        start_date: Date;
+    }): Promise<void>;
 }
 export interface WorkoutResults {
     count: number;

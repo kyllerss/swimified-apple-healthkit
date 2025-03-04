@@ -43,6 +43,24 @@
           "Date"
         ],
         "slug": "fetch_workouts"
+      },
+      {
+        "name": "initialize_background_observer",
+        "signature": "(opts: { start_date: Date; }) => Promise<void>",
+        "parameters": [
+          {
+            "name": "opts",
+            "docs": "",
+            "type": "{ start_date: Date; }"
+          }
+        ],
+        "returns": "Promise<void>",
+        "tags": [],
+        "docs": "",
+        "complexTypes": [
+          "Date"
+        ],
+        "slug": "initialize_background_observer"
       }
     ],
     "properties": []

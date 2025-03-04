@@ -16,6 +16,7 @@ npx cap sync
 * [`request_permissions()`](#request_permissions)
 * [`is_available()`](#is_available)
 * [`fetch_workouts(...)`](#fetch_workouts)
+* [`initialize_background_observer(...)`](#initialize_background_observer)
 * [Interfaces](#interfaces)
 
 </docgen-index>
@@ -52,6 +53,19 @@ fetch_workouts(opts: { start_date: Date; end_date: Date; }) => Promise<WorkoutRe
 | **`opts`** | <code>{ start_date: <a href="#date">Date</a>; end_date: <a href="#date">Date</a>; }</code> |
 
 **Returns:** <code>Promise&lt;<a href="#workoutresults">WorkoutResults</a>&gt;</code>
+
+--------------------
+
+
+### initialize_background_observer(...)
+
+```typescript
+initialize_background_observer(opts: { start_date: Date; }) => Promise<void>
+```
+
+| Param      | Type                                                   |
+| ---------- | ------------------------------------------------------ |
+| **`opts`** | <code>{ start_date: <a href="#date">Date</a>; }</code> |
 
 --------------------
 

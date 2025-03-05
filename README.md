@@ -60,12 +60,12 @@ fetch_workouts(opts: { start_date: Date; end_date: Date; }) => Promise<WorkoutRe
 ### initialize_background_observer(...)
 
 ```typescript
-initialize_background_observer(opts: { start_date: Date; }) => Promise<void>
+initialize_background_observer(opts: { start_date: Date; upload_url: string; upload_token: string; }) => Promise<void>
 ```
 
-| Param      | Type                                                   |
-| ---------- | ------------------------------------------------------ |
-| **`opts`** | <code>{ start_date: <a href="#date">Date</a>; }</code> |
+| Param      | Type                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------ |
+| **`opts`** | <code>{ start_date: <a href="#date">Date</a>; upload_url: string; upload_token: string; }</code> |
 
 --------------------
 

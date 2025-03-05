@@ -7,6 +7,8 @@ export interface SwimifiedCapacitorHealthKitPlugin {
     }): Promise<WorkoutResults>;
     initialize_background_observer(opts: {
         start_date: Date;
+        upload_url: string;
+        upload_token: string;
     }): Promise<void>;
 }
 export interface WorkoutResults {

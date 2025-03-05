@@ -46,12 +46,12 @@
       },
       {
         "name": "initialize_background_observer",
-        "signature": "(opts: { start_date: Date; }) => Promise<void>",
+        "signature": "(opts: { start_date: Date; upload_url: string; upload_token: string; }) => Promise<void>",
         "parameters": [
           {
             "name": "opts",
             "docs": "",
-            "type": "{ start_date: Date; }"
+            "type": "{ start_date: Date; upload_url: string; upload_token: string; }"
           }
         ],
         "returns": "Promise<void>",

@@ -3,6 +3,32 @@ import Capacitor
 import HealthKit
 import CoreLocation
 
+class BackgroundSessionDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate, URLSessionDataDelegate {
+    
+    var receivedData = Data()
+    var response: URLResponse?
+    var completion: ((Data?, URLResponse?, Error?) -> Void)?
+    
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        
+        print("Session Delegate ----> received data")
+        receivedData.append(data)
+    }
+    
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        
+        print("Session Delegate ----> response received")
+        self.response = response
+        completionHandler(.allow)
+    }
+    
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+
+        print("Session Delegate ----> completed")
+        completion?(receivedData, response, error)
+    }
+}
+
 var healthStore = HKHealthStore()
 
 /**
@@ -41,7 +67,9 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             return call.reject("Parameter start_date is required.")
         }
         
-        backgroundStartDate = startDate
+        self.backgroundStartDate = startDate
+        
+        print("------> Registered backgroundStartDate: \(startDate) \(self.backgroundStartDate!)")
         
         let shouldResetAnchor = call.getBool( "reset_anchor") ?? false
         if shouldResetAnchor {
@@ -50,10 +78,14 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             store_background_anchor(nil) // clear out stored anchor (if any)
         }
         
+        start_background_workout_observer() // initalizes anchor query and observer
+        
         call.resolve()
     }
 
     private func store_background_anchor(_ anchor: HKQueryAnchor?) {
+        
+        print("-----> Storing background anchor")
         
         if anchor == nil {
             
@@ -65,12 +97,16 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             
             let data = try NSKeyedArchiver.archivedData(withRootObject: anchor!, requiringSecureCoding: true)
             UserDefaults.standard.set(data, forKey: "backgroundAnchorKey")
+            
+            print("-------> Stored anchor query!")
         } catch {
             print("Failed to store background anchor in UserDefaults: \(error)")
         }
     }
     
     private func retrieve_background_anchor() -> HKQueryAnchor? {
+        
+        print("-----> Fetching background anchor")
         
         guard let data = UserDefaults.standard.data(forKey: "backgroundAnchorKey") else {
             return nil
@@ -95,7 +131,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             if let error = error {
                 print("Failed to enable background delivery: \(error.localizedDescription)")
             } else {
-                print( "Background delivery enabled: \(success)")
+                print("Background delivery enabled: \(success)")
             }
         }
         
@@ -104,6 +140,8 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             [weak self] _, completionHandler, error in
             guard let self = self else {return}
             
+            print("------> Observer query invoked!")
+            
             if let error = error {
                 
                 print("Observer query error: \(error.localizedDescription)")
@@ -111,6 +149,8 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                 return
             }
             
+            print("------> start_background_workout_observer() -> backgroundStartDate: \(String(describing: self.backgroundStartDate))")
+
             self.internal_fetch_workouts(
                 startDate: self.backgroundStartDate,
                 endDate: nil,
@@ -119,11 +159,22 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                 
                 guard let self = self else {return}
                 
-                self.backgroundAnchor = newAnchor
-                self.store_background_anchor(newAnchor)
-                
-                // TODO PROCESS CALL AND STORE IN SERVER
-                print("-----> Retrieved background workouts: \(workouts.count)")
+                print("-----> Observer query -> Retrieved background workouts: \(workouts.count)")
+                Task {
+                    
+                    let success = await self.post_workout(workouts)
+                    if success {
+
+                        print("Workout background call successfully submitted.")
+
+                        // successfully processed callback, so store updated anchor
+                        self.backgroundAnchor = newAnchor
+                        self.store_background_anchor(newAnchor)
+
+                    } else {
+                        print("Failed to POST background workout data.")
+                    }
+                }
             }
             
             // finalize callback
@@ -131,6 +182,137 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
         
         healthStore.execute(observerQuery)
+    }
+    
+    /**
+     * Capacitor performs a similar operation on the returned [JSObject] results.
+     * To preserve the existing flow, we perform a similar operation on the result
+     * set before performing the POST operation as serializing to JSON an object
+     * that has Date objects causes serialization errors.
+     */
+    private func prepare_for_serialization(in object: Any) -> Any {
+        
+        if let date = object as? Date {
+            return ISO8601DateFormatter().string(from: date)
+        } else if let array = object as? [Any] {
+            return array.map { prepare_for_serialization(in: $0) }
+        } else if let dictionary = object as? [String: Any] {
+            var converted = [String: Any]()
+            for (key, value) in dictionary {
+                converted[key] = prepare_for_serialization(in: value)
+            }
+            return converted
+        }
+        return object
+    }
+
+    @MainActor
+    private func post_workout(_ results: [JSObject]) async -> Bool {
+        
+        print("--------> Posting workout")
+        
+        let target_url = "https://www.dev.swimerize.com/integrations/apple/inbound/sync/activity"
+        guard let url = URL(string: target_url) else {
+            print("Unable to determine POST url endpoint: \(target_url)")
+            return false
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        do {
+            
+            var payload_json = JSObject()
+            payload_json["workout_results"] = results
+            payload_json["upload_token"] = "<upload_token>"
+
+            let serializable_results = prepare_for_serialization(in: payload_json)
+            let json_data = try JSONSerialization.data(withJSONObject: serializable_results, options: [])
+            request.httpBody = json_data
+            
+        } catch {
+            
+            print("Error serializing workout for POST: \(error)")
+            return false
+        }
+        
+        // setup background task
+        var bg_task_id = UIBackgroundTaskIdentifier.invalid
+        bg_task_id = UIApplication.shared.beginBackgroundTask(withName: "SwimerizeBackgroundWorkoutSync") {
+            
+            UIApplication.shared.endBackgroundTask(bg_task_id)
+            bg_task_id = UIBackgroundTaskIdentifier.invalid
+        }
+        
+        defer {
+                if bg_task_id != UIBackgroundTaskIdentifier.invalid {
+                    UIApplication.shared.endBackgroundTask(bg_task_id)
+                    bg_task_id = UIBackgroundTaskIdentifier.invalid
+                }
+        }
+        
+        let config = URLSessionConfiguration.background(withIdentifier: "com.swimerize.bg_workout_sync_session")
+        config.isDiscretionary = false
+        config.sessionSendsLaunchEvents = true
+        
+        let delegate = BackgroundSessionDelegate()
+        let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+        
+        return await withCheckedContinuation { continuation in
+            
+            delegate.completion = { data, response, error in
+            
+                print("Completion delegate triggered")
+                // clear delegate completion in the event completion closure resumed more than once
+                guard delegate.completion != nil else {return}
+                defer {delegate.completion = nil}
+                
+                print("Completion delegate continuing...")
+                
+                if let error = error {
+                    print("Background task error: \(error)")
+                    continuation.resume(returning: false)
+                    return
+                }
+                
+                if let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) {
+                    
+                    print("Background session succeeded with status: \(httpResponse.statusCode)")
+                    continuation.resume(returning: true)
+                } else {
+                    
+                    print("Unexpected response: \(String(describing: response))")
+                    continuation.resume(returning: false)
+                }
+            }
+            
+            let task = session.dataTask(with: request)
+            task.resume()
+        }
+//        do {
+//            
+//            let (_, response) = try await session.data(for: request)
+//            
+//            await UIApplication.shared.endBackgroundTask(bg_task_id)
+//            
+//            
+//            if let http_response = response as? HTTPURLResponse, (200...299).contains(http_response.statusCode) {
+//                
+//                print("Workout successfully posted: \(http_response.statusCode)")
+//                return true
+//            } else {
+//                
+//                print("Error posting workout: \(response)")
+//                return false
+//            }
+//            
+//        } catch {
+//            
+//            print("Unexpected error posting workout: \(error)")
+//            await UIApplication.shared.endBackgroundTask(bg_task_id)
+//            return false
+//        }
     }
     
     private func reorder_dates(start: Date, end: Date) -> (start: Date, end: Date) {
@@ -209,8 +391,6 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                 return
             }
             
-            self.start_background_workout_observer() // start listening for changes
-            
             call.resolve()
         }
         
@@ -224,6 +404,8 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         completion: @escaping([JSObject], HKQueryAnchor?) -> Void
     ) {
     
+        print("----> Internal fetch workouts...");
+        
         let workoutType = HKObjectType.workoutType()
         
         var predicate: NSPredicate?
@@ -641,10 +823,6 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     @available(iOS 15.0, *)
     private func get_heart_rate_series_data(start_date: Date, end_date: Date, series_sample: HKDiscreteQuantitySample, completion: @escaping (Result<[JSObject], Error>) -> Void) {
         
-        let reordered_dates = reorder_dates(start: start_date, end: end_date)
-        var start_date = reordered_dates.start
-        var end_date = reordered_dates.end
-
         guard let heart_rate_type = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
         
             return completion(.success([])) // hr not supported

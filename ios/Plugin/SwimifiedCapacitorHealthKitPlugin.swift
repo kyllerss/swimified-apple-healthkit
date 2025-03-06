@@ -46,14 +46,19 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         case workoutRouteRequestFailed
     }
     
+    @MainActor
     public override func load() {
+        
+        print("Lifecycle method load() called on HealthKit plugin.")
         
         super.load()
         
         self.backgroundAnchor = self.retrieve_background_anchor()
         
-        let authorized = self.is_authorized()
-        if (authorized) {
+//        let authorized = self.is_authorized()
+//        if (authorized) {
+        let anchor_query = self.retrieve_background_anchor()
+        if anchor_query != nil {
             self.start_background_workout_observer()
         } else {
             print("HealthKit not authorized - skipping starting observer query.")
@@ -63,11 +68,22 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     @objc func initialize_background_observer(_ call: CAPPluginCall) {
         
         guard let startDate = call.getDate("start_date") else {
-
             return call.reject("Parameter start_date is required.")
         }
         
+        guard let upload_target_url = call.getString("upload_url") else {
+            return call.reject("Parameter upload_url is required.")
+        }
+        
+        guard let upload_token = call.getString("upload_token") else {
+            return call.reject("Parameter upload_token is required.")
+        }
+        
         self.backgroundStartDate = startDate
+        
+        // persist upload properties
+        UserDefaults.standard.set(upload_target_url, forKey: "upload_target_url")
+        UserDefaults.standard.set(upload_token, forKey: "upload_token")
         
         print("------> Registered backgroundStartDate: \(startDate) \(self.backgroundStartDate!)")
         
@@ -122,7 +138,17 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
     }
     
+    private func retrieve_upload_endpoint_properties() -> (upload_url: String, upload_token: String) {
+        
+        let upload_url = UserDefaults.standard.string(forKey: "upload_target_url") ?? "https://www.swimerize.com/integrations/apple/inbound/sync/activity"
+        let upload_token = UserDefaults.standard.string(forKey: "upload_token") ?? "<MISSING TOKEN>"
+
+        return (upload_url: upload_url, upload_token: upload_token)
+    }
+    
     private func start_background_workout_observer() {
+        
+        print("Function start_background_workout_observer called.")
         
         let workoutType = HKObjectType.workoutType()
         
@@ -209,14 +235,27 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     @MainActor
     private func post_workout(_ results: [JSObject]) async -> Bool {
         
-        print("--------> Posting workout")
-        
-        let target_url = "https://www.dev.swimerize.com/integrations/apple/inbound/sync/activity"
-        guard let url = URL(string: target_url) else {
-            print("Unable to determine POST url endpoint: \(target_url)")
-            return false
+        if results.count == 0 {
+            print("No workouts to upload.")
+            return true
         }
         
+        print("--------> Posting workout")
+        
+        // load upload properties
+//        let upload_url = UserDefaults.standard.string(forKey: "upload_url") ?? "https://www.swimerize.com/integrations/apple/inbound/sync/activity"
+//        let upload_token = UserDefaults.standard.string(forKey: "upload_token") ?? "<MISSING TOKEN>"
+        let upload_properties = self.retrieve_upload_endpoint_properties()
+        let upload_url = upload_properties.upload_url
+        let upload_token = upload_properties.upload_token
+        
+        print("-----> Posting to \(upload_url) w/ token \(upload_token)")
+        
+        guard let url = URL(string: upload_url) else {
+            print("Unable to determine POST url endpoint: \(upload_url)")
+            return false
+        }
+                
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -225,7 +264,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             
             var payload_json = JSObject()
             payload_json["workout_results"] = results
-            payload_json["upload_token"] = "<upload_token>"
+            payload_json["upload_token"] = upload_token
 
             let serializable_results = prepare_for_serialization(in: payload_json)
             let json_data = try JSONSerialization.data(withJSONObject: serializable_results, options: [])

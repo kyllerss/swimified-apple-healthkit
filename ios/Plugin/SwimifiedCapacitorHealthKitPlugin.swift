@@ -110,8 +110,8 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         let previously_authorized = retrieve_background_anchor() != nil
         let currently_authorized = _is_authorized()
         
-        let lost_authorization = previously_authorized && !currently_authorized
-        call.resolve(["needs_reauthorization": lost_authorization])
+        call.resolve(["previously_authorized": previously_authorized,
+                      "currently_authorized": currently_authorized])
     }
 
     private func store_background_anchor(_ anchor: HKQueryAnchor?) {

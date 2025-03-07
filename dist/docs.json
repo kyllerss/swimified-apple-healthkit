@@ -56,7 +56,7 @@
       },
       {
         "name": "initialize_background_observer",
-        "signature": "(opts: { start_date: Date; upload_url: string; upload_token: string; }) => Promise<{ needs_reauthorization: boolean; }>",
+        "signature": "(opts: { start_date: Date; upload_url: string; upload_token: string; }) => Promise<{ previously_authorized: boolean; currently_authorized: boolean; }>",
         "parameters": [
           {
             "name": "opts",
@@ -64,7 +64,7 @@
             "type": "{ start_date: Date; upload_url: string; upload_token: string; }"
           }
         ],
-        "returns": "Promise<{ needs_reauthorization: boolean; }>",
+        "returns": "Promise<{ previously_authorized: boolean; currently_authorized: boolean; }>",
         "tags": [],
         "docs": "",
         "complexTypes": [

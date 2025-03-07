@@ -13,7 +13,8 @@ export interface SwimifiedCapacitorHealthKitPlugin {
         upload_url: string;
         upload_token: string;
     }): Promise<{
-        needs_reauthorization: boolean;
+        previously_authorized: boolean;
+        currently_authorized: boolean;
     }>;
 }
 export interface WorkoutResults {

@@ -3,7 +3,7 @@ export interface SwimifiedCapacitorHealthKitPlugin {
     is_available(): Promise<void>;
     is_authorized(): Promise<{authorized: boolean}>;
     fetch_workouts(opts: {start_date: Date, end_date: Date}): Promise<WorkoutResults>;
-    initialize_background_observer(opts: {start_date: Date, upload_url: string, upload_token: string}): Promise<{needs_reauthorization: boolean}>;
+    initialize_background_observer(opts: {start_date: Date, upload_url: string, upload_token: string}): Promise<{previously_authorized: boolean, currently_authorized: boolean}>;
 }
 
 export interface WorkoutResults {

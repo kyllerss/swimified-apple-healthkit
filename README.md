@@ -72,14 +72,14 @@ fetch_workouts(opts: { start_date: Date; end_date: Date; }) => Promise<WorkoutRe
 ### initialize_background_observer(...)
 
 ```typescript
-initialize_background_observer(opts: { start_date: Date; upload_url: string; upload_token: string; }) => Promise<{ needs_reauthorization: boolean; }>
+initialize_background_observer(opts: { start_date: Date; upload_url: string; upload_token: string; }) => Promise<{ previously_authorized: boolean; currently_authorized: boolean; }>
 ```
 
 | Param      | Type                                                                                             |
 | ---------- | ------------------------------------------------------------------------------------------------ |
 | **`opts`** | <code>{ start_date: <a href="#date">Date</a>; upload_url: string; upload_token: string; }</code> |
 
-**Returns:** <code>Promise&lt;{ needs_reauthorization: boolean; }&gt;</code>
+**Returns:** <code>Promise&lt;{ previously_authorized: boolean; currently_authorized: boolean; }&gt;</code>
 
 --------------------
 

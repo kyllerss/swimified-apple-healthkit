@@ -26,6 +26,16 @@
         "slug": "is_available"
       },
       {
+        "name": "is_authorized",
+        "signature": "() => Promise<{ authorized: boolean; }>",
+        "parameters": [],
+        "returns": "Promise<{ authorized: boolean; }>",
+        "tags": [],
+        "docs": "",
+        "complexTypes": [],
+        "slug": "is_authorized"
+      },
+      {
         "name": "fetch_workouts",
         "signature": "(opts: { start_date: Date; end_date: Date; }) => Promise<WorkoutResults>",
         "parameters": [
@@ -46,7 +56,7 @@
       },
       {
         "name": "initialize_background_observer",
-        "signature": "(opts: { start_date: Date; upload_url: string; upload_token: string; }) => Promise<void>",
+        "signature": "(opts: { start_date: Date; upload_url: string; upload_token: string; }) => Promise<{ needs_reauthorization: boolean; }>",
         "parameters": [
           {
             "name": "opts",
@@ -54,7 +64,7 @@
             "type": "{ start_date: Date; upload_url: string; upload_token: string; }"
           }
         ],
-        "returns": "Promise<void>",
+        "returns": "Promise<{ needs_reauthorization: boolean; }>",
         "tags": [],
         "docs": "",
         "complexTypes": [

@@ -54,9 +54,19 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         super.load()
         
         self.backgroundAnchor = self.retrieve_background_anchor()
-        
-//        let authorized = self.is_authorized()
-//        if (authorized) {
+
+        /*
+         * NOTE: Initially the call here was for is_authorized(), but
+         * testing showed that AHK has an init lag where the permission
+         * is not available and will return false if called too close
+         * to the initialization of the app. I am not sure why this
+         * is, but the work-around is to instead check for the existence
+         * of an archived anchor query which implies authorization as
+         * granted at some point.
+         *
+         * A separate flow at app bootstrap will check explicitly for
+         * the authorization permission and warn user if turned off.
+         */
         let anchor_query = self.retrieve_background_anchor()
         if anchor_query != nil {
             self.start_background_workout_observer()
@@ -96,7 +106,12 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         
         start_background_workout_observer() // initalizes anchor query and observer
         
-        call.resolve()
+        // determine if user needs to authorize again
+        let previously_authorized = retrieve_background_anchor() != nil
+        let currently_authorized = _is_authorized()
+        
+        let lost_authorization = previously_authorized && !currently_authorized
+        call.resolve(["needs_reauthorization": lost_authorization])
     }
 
     private func store_background_anchor(_ anchor: HKQueryAnchor?) {
@@ -242,9 +257,6 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         
         print("--------> Posting workout")
         
-        // load upload properties
-//        let upload_url = UserDefaults.standard.string(forKey: "upload_url") ?? "https://www.swimerize.com/integrations/apple/inbound/sync/activity"
-//        let upload_token = UserDefaults.standard.string(forKey: "upload_token") ?? "<MISSING TOKEN>"
         let upload_properties = self.retrieve_upload_endpoint_properties()
         let upload_url = upload_properties.upload_url
         let upload_token = upload_properties.upload_token
@@ -329,29 +341,6 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             let task = session.dataTask(with: request)
             task.resume()
         }
-//        do {
-//            
-//            let (_, response) = try await session.data(for: request)
-//            
-//            await UIApplication.shared.endBackgroundTask(bg_task_id)
-//            
-//            
-//            if let http_response = response as? HTTPURLResponse, (200...299).contains(http_response.statusCode) {
-//                
-//                print("Workout successfully posted: \(http_response.statusCode)")
-//                return true
-//            } else {
-//                
-//                print("Error posting workout: \(response)")
-//                return false
-//            }
-//            
-//        } catch {
-//            
-//            print("Unexpected error posting workout: \(error)")
-//            await UIApplication.shared.endBackgroundTask(bg_task_id)
-//            return false
-//        }
     }
     
     private func reorder_dates(start: Date, end: Date) -> (start: Date, end: Date) {
@@ -389,11 +378,18 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
     }
     
-    private func is_authorized() -> Bool {
+    private func _is_authorized() -> Bool {
         
         let status = healthStore.authorizationStatus(for: HKObjectType.workoutType())
         return status == .sharingAuthorized
     }
+    
+    @objc func is_authorized(_ call: CAPPluginCall) {
+     
+        let authorized = self._is_authorized()
+        call.resolve(["authorized": authorized])
+    }
+
     
     @objc public func request_permissions(_ call: CAPPluginCall) {
         

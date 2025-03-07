@@ -15,6 +15,7 @@ npx cap sync
 
 * [`request_permissions()`](#request_permissions)
 * [`is_available()`](#is_available)
+* [`is_authorized()`](#is_authorized)
 * [`fetch_workouts(...)`](#fetch_workouts)
 * [`initialize_background_observer(...)`](#initialize_background_observer)
 * [Interfaces](#interfaces)
@@ -42,6 +43,17 @@ is_available() => Promise<void>
 --------------------
 
 
+### is_authorized()
+
+```typescript
+is_authorized() => Promise<{ authorized: boolean; }>
+```
+
+**Returns:** <code>Promise&lt;{ authorized: boolean; }&gt;</code>
+
+--------------------
+
+
 ### fetch_workouts(...)
 
 ```typescript
@@ -60,12 +72,14 @@ fetch_workouts(opts: { start_date: Date; end_date: Date; }) => Promise<WorkoutRe
 ### initialize_background_observer(...)
 
 ```typescript
-initialize_background_observer(opts: { start_date: Date; upload_url: string; upload_token: string; }) => Promise<void>
+initialize_background_observer(opts: { start_date: Date; upload_url: string; upload_token: string; }) => Promise<{ needs_reauthorization: boolean; }>
 ```
 
 | Param      | Type                                                                                             |
 | ---------- | ------------------------------------------------------------------------------------------------ |
 | **`opts`** | <code>{ start_date: <a href="#date">Date</a>; upload_url: string; upload_token: string; }</code> |
+
+**Returns:** <code>Promise&lt;{ needs_reauthorization: boolean; }&gt;</code>
 
 --------------------
 

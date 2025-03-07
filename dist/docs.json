@@ -26,14 +26,14 @@
         "slug": "is_available"
       },
       {
-        "name": "authorization_status",
-        "signature": "() => Promise<{ previously_authorized: boolean; currently_authorized: boolean; }>",
+        "name": "is_authorized",
+        "signature": "() => Promise<{ authorized: boolean; }>",
         "parameters": [],
-        "returns": "Promise<{ previously_authorized: boolean; currently_authorized: boolean; }>",
+        "returns": "Promise<{ authorized: boolean; }>",
         "tags": [],
         "docs": "",
         "complexTypes": [],
-        "slug": "authorization_status"
+        "slug": "is_authorized"
       },
       {
         "name": "fetch_workouts",
@@ -56,7 +56,7 @@
       },
       {
         "name": "initialize_background_observer",
-        "signature": "(opts: { start_date: Date; upload_url: string; upload_token: string; }) => Promise<{ previously_authorized: boolean; currently_authorized: boolean; }>",
+        "signature": "(opts: { start_date: Date; upload_url: string; upload_token: string; }) => Promise<{ authorized: boolean; }>",
         "parameters": [
           {
             "name": "opts",
@@ -64,7 +64,7 @@
             "type": "{ start_date: Date; upload_url: string; upload_token: string; }"
           }
         ],
-        "returns": "Promise<{ previously_authorized: boolean; currently_authorized: boolean; }>",
+        "returns": "Promise<{ authorized: boolean; }>",
         "tags": [],
         "docs": "",
         "complexTypes": [

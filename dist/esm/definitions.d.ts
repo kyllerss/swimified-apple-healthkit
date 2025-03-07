@@ -1,9 +1,8 @@
 export interface SwimifiedCapacitorHealthKitPlugin {
     request_permissions(): Promise<void>;
     is_available(): Promise<void>;
-    authorization_status(): Promise<{
-        previously_authorized: boolean;
-        currently_authorized: boolean;
+    is_authorized(): Promise<{
+        authorized: boolean;
     }>;
     fetch_workouts(opts: {
         start_date: Date;
@@ -14,8 +13,7 @@ export interface SwimifiedCapacitorHealthKitPlugin {
         upload_url: string;
         upload_token: string;
     }): Promise<{
-        previously_authorized: boolean;
-        currently_authorized: boolean;
+        authorized: boolean;
     }>;
 }
 export interface WorkoutResults {

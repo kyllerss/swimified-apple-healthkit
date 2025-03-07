@@ -107,11 +107,9 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         _start_background_workout_observer() // initalizes anchor query and observer
         
         // determine if user needs to authorize again
-        let previously_authorized = _is_previously_authorized()
-        let currently_authorized = _is_authorized()
+        let authorized = _is_authorized()
         
-        call.resolve(["previously_authorized": previously_authorized,
-                      "currently_authorized": currently_authorized])
+        call.resolve(["authorized": authorized])
     }
 
     private func _store_background_anchor(_ anchor: HKQueryAnchor?) {
@@ -379,23 +377,15 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     }
     
     private func _is_authorized() -> Bool {
-        
-        let status = healthStore.authorizationStatus(for: HKObjectType.workoutType())
-        return status == .sharingAuthorized
-    }
-    
-    private func _is_previously_authorized() -> Bool {
-        
+                
         return _retrieve_background_anchor() != nil
     }
     
-    @objc func authorization_status(_ call: CAPPluginCall) {
+    @objc func is_authorized(_ call: CAPPluginCall) {
      
-        let previously_authorized = self._is_previously_authorized()
-        let currently_authorized = self._is_authorized()
+        let authorized = self._is_authorized()
         
-        call.resolve(["previously_authorized": previously_authorized,
-                      "currently_authorized": currently_authorized])
+        call.resolve(["authorized": authorized])
     }
 
     

@@ -53,7 +53,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         
         super.load()
         
-        self.backgroundAnchor = self.retrieve_background_anchor()
+        self.backgroundAnchor = self._retrieve_background_anchor()
 
         /*
          * NOTE: Initially the call here was for is_authorized(), but
@@ -67,9 +67,9 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
          * A separate flow at app bootstrap will check explicitly for
          * the authorization permission and warn user if turned off.
          */
-        let anchor_query = self.retrieve_background_anchor()
+        let anchor_query = self._retrieve_background_anchor()
         if anchor_query != nil {
-            self.start_background_workout_observer()
+            self._start_background_workout_observer()
         } else {
             print("HealthKit not authorized - skipping starting observer query.")
         }
@@ -101,20 +101,20 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         if shouldResetAnchor {
             
             backgroundAnchor = nil
-            store_background_anchor(nil) // clear out stored anchor (if any)
+            _store_background_anchor(nil) // clear out stored anchor (if any)
         }
         
-        start_background_workout_observer() // initalizes anchor query and observer
+        _start_background_workout_observer() // initalizes anchor query and observer
         
         // determine if user needs to authorize again
-        let previously_authorized = retrieve_background_anchor() != nil
+        let previously_authorized = _is_previously_authorized()
         let currently_authorized = _is_authorized()
         
         call.resolve(["previously_authorized": previously_authorized,
                       "currently_authorized": currently_authorized])
     }
 
-    private func store_background_anchor(_ anchor: HKQueryAnchor?) {
+    private func _store_background_anchor(_ anchor: HKQueryAnchor?) {
         
         print("-----> Storing background anchor")
         
@@ -135,7 +135,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
     }
     
-    private func retrieve_background_anchor() -> HKQueryAnchor? {
+    private func _retrieve_background_anchor() -> HKQueryAnchor? {
         
         print("-----> Fetching background anchor")
         
@@ -153,7 +153,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
     }
     
-    private func retrieve_upload_endpoint_properties() -> (upload_url: String, upload_token: String) {
+    private func _retrieve_upload_endpoint_properties() -> (upload_url: String, upload_token: String) {
         
         let upload_url = UserDefaults.standard.string(forKey: "upload_target_url") ?? "https://www.swimerize.com/integrations/apple/inbound/sync/activity"
         let upload_token = UserDefaults.standard.string(forKey: "upload_token") ?? "<MISSING TOKEN>"
@@ -161,7 +161,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         return (upload_url: upload_url, upload_token: upload_token)
     }
     
-    private func start_background_workout_observer() {
+    private func _start_background_workout_observer() {
         
         print("Function start_background_workout_observer called.")
         
@@ -192,7 +192,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             
             print("------> start_background_workout_observer() -> backgroundStartDate: \(String(describing: self.backgroundStartDate))")
 
-            self.internal_fetch_workouts(
+            self._internal_fetch_workouts(
                 startDate: self.backgroundStartDate,
                 endDate: nil,
                 anchor: self.backgroundAnchor
@@ -203,14 +203,14 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                 print("-----> Observer query -> Retrieved background workouts: \(workouts.count)")
                 Task {
                     
-                    let success = await self.post_workout(workouts)
+                    let success = await self._post_workout(workouts)
                     if success {
 
                         print("Workout background call successfully submitted.")
 
                         // successfully processed callback, so store updated anchor
                         self.backgroundAnchor = newAnchor
-                        self.store_background_anchor(newAnchor)
+                        self._store_background_anchor(newAnchor)
 
                     } else {
                         print("Failed to POST background workout data.")
@@ -231,16 +231,16 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
      * set before performing the POST operation as serializing to JSON an object
      * that has Date objects causes serialization errors.
      */
-    private func prepare_for_serialization(in object: Any) -> Any {
+    private func _prepare_for_serialization(in object: Any) -> Any {
         
         if let date = object as? Date {
             return ISO8601DateFormatter().string(from: date)
         } else if let array = object as? [Any] {
-            return array.map { prepare_for_serialization(in: $0) }
+            return array.map { _prepare_for_serialization(in: $0) }
         } else if let dictionary = object as? [String: Any] {
             var converted = [String: Any]()
             for (key, value) in dictionary {
-                converted[key] = prepare_for_serialization(in: value)
+                converted[key] = _prepare_for_serialization(in: value)
             }
             return converted
         }
@@ -248,7 +248,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     }
 
     @MainActor
-    private func post_workout(_ results: [JSObject]) async -> Bool {
+    private func _post_workout(_ results: [JSObject]) async -> Bool {
         
         if results.count == 0 {
             print("No workouts to upload.")
@@ -257,7 +257,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         
         print("--------> Posting workout")
         
-        let upload_properties = self.retrieve_upload_endpoint_properties()
+        let upload_properties = self._retrieve_upload_endpoint_properties()
         let upload_url = upload_properties.upload_url
         let upload_token = upload_properties.upload_token
         
@@ -278,7 +278,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             payload_json["workout_results"] = results
             payload_json["upload_token"] = upload_token
 
-            let serializable_results = prepare_for_serialization(in: payload_json)
+            let serializable_results = _prepare_for_serialization(in: payload_json)
             let json_data = try JSONSerialization.data(withJSONObject: serializable_results, options: [])
             request.httpBody = json_data
             
@@ -343,7 +343,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
     }
     
-    private func reorder_dates(start: Date, end: Date) -> (start: Date, end: Date) {
+    private func _reorder_dates(start: Date, end: Date) -> (start: Date, end: Date) {
         
         var startDate = start
         var endDate = end
@@ -384,10 +384,18 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         return status == .sharingAuthorized
     }
     
-    @objc func is_authorized(_ call: CAPPluginCall) {
+    private func _is_previously_authorized() -> Bool {
+        
+        return _retrieve_background_anchor() != nil
+    }
+    
+    @objc func authorization_status(_ call: CAPPluginCall) {
      
-        let authorized = self._is_authorized()
-        call.resolve(["authorized": authorized])
+        let previously_authorized = self._is_previously_authorized()
+        let currently_authorized = self._is_authorized()
+        
+        call.resolve(["previously_authorized": previously_authorized,
+                      "currently_authorized": currently_authorized])
     }
 
     
@@ -432,7 +440,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         return;
     }
     
-    private func internal_fetch_workouts(
+    private func _internal_fetch_workouts(
         startDate: Date?,
         endDate: Date?,
         anchor: HKQueryAnchor?,
@@ -493,11 +501,11 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             return call.reject("Parameter end_date is required!")
         }
         
-        let reordered_dates = reorder_dates(start: startDate, end: endDate)
+        let reordered_dates = _reorder_dates(start: startDate, end: endDate)
         startDate = reordered_dates.start
         endDate = reordered_dates.end
 
-        internal_fetch_workouts(startDate: startDate, endDate: endDate, anchor: nil) { (workout_results, _) in
+        _internal_fetch_workouts(startDate: startDate, endDate: endDate, anchor: nil) { (workout_results, _) in
         
             call.resolve([
                 "count": workout_results.count,
@@ -539,20 +547,20 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             workout_obj["end_date"] = sample.endDate
             workout_obj["source"] = sample.sourceRevision.source.name
             workout_obj["source_bundle_id"] = sample.sourceRevision.source.bundleIdentifier
-            workout_obj["device"] = get_device_information(device: sample.device)
+            workout_obj["device"] = _get_device_information(device: sample.device)
             workout_obj["HKWorkoutActivityTypeId"] = Int(sample.workoutActivityType.rawValue)
 
             // process stroke count data
             let stroke_count_data: [JSObject]
             do {
-                stroke_count_data = try await get_stroke_count_data(sample)
+                stroke_count_data = try await _get_stroke_count_data(sample)
             } catch {
                 stroke_count_data = []
             }
 
             let vo2max_data: [JSObject]
             do {
-                vo2max_data = try await get_vo2max_data(sample)
+                vo2max_data = try await _get_vo2max_data(sample)
             } catch {
                 vo2max_data = []
             }
@@ -578,7 +586,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                     }
                     let uuid = activity.uuid
                                         
-                    let reordered_dates = reorder_dates(start: start_date, end: end_date)
+                    let reordered_dates = _reorder_dates(start: start_date, end: end_date)
                     start_date = reordered_dates.start
                     end_date = reordered_dates.end
 
@@ -586,13 +594,13 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                     var events: [JSObject] = []
                     for event in activity.workoutEvents {
                         
-                        events.append(generate_event_output(event: event))
+                        events.append(_generate_event_output(event: event))
                     }
                     
                     // heart rate data
                     let heart_rate_data: [JSObject]
                     do {
-                        heart_rate_data = try await get_heart_rate(start_date: start_date, end_date: end_date, workout: sample)
+                        heart_rate_data = try await _get_heart_rate(start_date: start_date, end_date: end_date, workout: sample)
                     } catch {
                         heart_rate_data = []
                     }
@@ -622,13 +630,13 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             
             // GPS coordinates
             do {
-                let route: HKWorkoutRoute = try await get_route(for: sample)
-                let locations = try await get_locations(for: route)
+                let route: HKWorkoutRoute = try await _get_route(for: sample)
+                let locations = try await _get_locations(for: route)
                 
                 var cl_locations: [JSObject] = []
                 for location in locations {
                     
-                    cl_locations.append(generate_location_output(from: location))
+                    cl_locations.append(_generate_location_output(from: location))
                 }
                 
                 workout_obj["CLLocations"] = cl_locations
@@ -643,20 +651,20 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         return output
      }
     
-    private func get_stroke_count_data(_ workout: HKWorkout) async throws -> [JSObject] {
+    private func _get_stroke_count_data(_ workout: HKWorkout) async throws -> [JSObject] {
         try await withCheckedThrowingContinuation { continuation in
-            get_stroke_count(for: workout) { result in
+            _get_stroke_count(for: workout) { result in
                 continuation.resume(with: result)
             }
         }
     } 
-    private func get_stroke_count(for workout: HKWorkout, completion: @escaping (Result<[JSObject], Error>) -> Void) {
+    private func _get_stroke_count(for workout: HKWorkout, completion: @escaping (Result<[JSObject], Error>) -> Void) {
         
         var to_return: [JSObject] = []
         var start_date = workout.startDate;
         var end_date = workout.endDate;
         
-        let reordered_dates = reorder_dates(start: start_date, end: end_date)
+        let reordered_dates = _reorder_dates(start: start_date, end: end_date)
         start_date = reordered_dates.start
         end_date = reordered_dates.end
 
@@ -705,20 +713,20 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         healthStore.execute(query)
     }
 
-    private func get_vo2max_data(_ workout: HKWorkout) async throws -> [JSObject] {
+    private func _get_vo2max_data(_ workout: HKWorkout) async throws -> [JSObject] {
         try await withCheckedThrowingContinuation { continuation in
-            get_vo2max(for: workout) { result in
+            _get_vo2max(for: workout) { result in
                 continuation.resume(with: result)
             }
         }
     }
-    private func get_vo2max(for workout: HKWorkout, completion: @escaping (Result<[JSObject], Error>) -> Void) {
+    private func _get_vo2max(for workout: HKWorkout, completion: @escaping (Result<[JSObject], Error>) -> Void) {
         
         var to_return: [JSObject] = []
         var start_date = workout.startDate;
         var end_date = workout.endDate;
 
-        let reordered_dates = reorder_dates(start: start_date, end: end_date)
+        let reordered_dates = _reorder_dates(start: start_date, end: end_date)
         start_date = reordered_dates.start
         end_date = reordered_dates.end
 
@@ -769,18 +777,18 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     }
     
     @available(iOS 15.0, *)
-    private func get_heart_rate(start_date: Date, end_date: Date, workout: HKWorkout) async throws -> [JSObject] {
+    private func _get_heart_rate(start_date: Date, end_date: Date, workout: HKWorkout) async throws -> [JSObject] {
         try await withCheckedThrowingContinuation { continuation in
-            get_heart_rate(start_date: start_date, end_date: end_date, workout: workout) { result in
+            _get_heart_rate(start_date: start_date, end_date: end_date, workout: workout) { result in
                 continuation.resume(with: result)
             }
         }
     }
     
     @available(iOS 15.0, *)
-    private func get_heart_rate(start_date: Date, end_date: Date, workout: HKWorkout, completion: @escaping (Result<[JSObject], Error>) -> Void) {
+    private func _get_heart_rate(start_date: Date, end_date: Date, workout: HKWorkout, completion: @escaping (Result<[JSObject], Error>) -> Void) {
         
-        let reordered_dates = reorder_dates(start: start_date, end: end_date)
+        let reordered_dates = _reorder_dates(start: start_date, end: end_date)
         let start_date = reordered_dates.start
         let end_date = reordered_dates.end
 
@@ -829,7 +837,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                         // query series data
                         do {
                             
-                            series_data = try await self.get_heart_rate_series_data(start_date: start_date, end_date: end_date, series_sample: sample)
+                            series_data = try await self._get_heart_rate_series_data(start_date: start_date, end_date: end_date, series_sample: sample)
                             
                         } catch {
                             series_data = []
@@ -847,16 +855,16 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     }
 
     @available(iOS 15.0, *)
-    private func get_heart_rate_series_data(start_date: Date, end_date: Date, series_sample: HKDiscreteQuantitySample) async throws -> [JSObject] {
+    private func _get_heart_rate_series_data(start_date: Date, end_date: Date, series_sample: HKDiscreteQuantitySample) async throws -> [JSObject] {
         try await withCheckedThrowingContinuation { continuation in
-            get_heart_rate_series_data(start_date: start_date, end_date: end_date, series_sample: series_sample) { result in
+            _get_heart_rate_series_data(start_date: start_date, end_date: end_date, series_sample: series_sample) { result in
                 continuation.resume(with: result)
             }
         }
     }
     
     @available(iOS 15.0, *)
-    private func get_heart_rate_series_data(start_date: Date, end_date: Date, series_sample: HKDiscreteQuantitySample, completion: @escaping (Result<[JSObject], Error>) -> Void) {
+    private func _get_heart_rate_series_data(start_date: Date, end_date: Date, series_sample: HKDiscreteQuantitySample, completion: @escaping (Result<[JSObject], Error>) -> Void) {
         
         guard let heart_rate_type = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
         
@@ -898,7 +906,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         healthStore.execute(detail_query)
    }
     
-    func generate_event_output(event: HKWorkoutEvent) -> JSObject {
+    private func _generate_event_output(event: HKWorkoutEvent) -> JSObject {
         
         let type: HKWorkoutEventType = event.type
         let start_timestamp: Date = event.dateInterval.start
@@ -923,7 +931,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         return to_return
     }
     
-    func get_device_information(device: HKDevice?) -> JSObject? {
+    private func _get_device_information(device: HKDevice?) -> JSObject? {
         
         if (device == nil) {
             return nil;
@@ -939,14 +947,14 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         return device_information;
     }
     
-    private func get_route(for workout: HKWorkout) async throws -> HKWorkoutRoute {
+    private func _get_route(for workout: HKWorkout) async throws -> HKWorkoutRoute {
         try await withCheckedThrowingContinuation { continuation in
-            get_route(for: workout) { result in
+            _get_route(for: workout) { result in
                 continuation.resume(with: result)
             }
         }
     }
-    private func get_route(for workout: HKWorkout, completion: @escaping (Result<HKWorkoutRoute, Error>) -> Void) {
+    private func _get_route(for workout: HKWorkout, completion: @escaping (Result<HKWorkoutRoute, Error>) -> Void) {
         
         let predicate = HKQuery.predicateForObjects(from: workout)
         let query = HKAnchoredObjectQuery(type: HKSeriesType.workoutRoute(),
@@ -971,15 +979,15 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         healthStore.execute(query)
     }
 
-    private func get_locations(for route: HKWorkoutRoute) async throws -> [CLLocation] {
+    private func _get_locations(for route: HKWorkoutRoute) async throws -> [CLLocation] {
         try await withCheckedThrowingContinuation{ continuation in
-            get_locations(for: route) { result in
+            _get_locations(for: route) { result in
                 continuation.resume(with: result)
             }
         }
     }
     
-    private func get_locations(for route: HKWorkoutRoute, completion: @escaping(Result<[CLLocation], Error>) -> Void) {
+    private func _get_locations(for route: HKWorkoutRoute, completion: @escaping(Result<[CLLocation], Error>) -> Void) {
         var queryLocations = [CLLocation]()
         let query = HKWorkoutRouteQuery(route: route) { query, locations, done, error in
 
@@ -999,7 +1007,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         healthStore.execute(query)
     }
 
-    private func generate_location_output(from location: CLLocation) -> JSObject {
+    private func _generate_location_output(from location: CLLocation) -> JSObject {
 
         let timestamp: Date = location.timestamp
         let latitude = location.coordinate.latitude

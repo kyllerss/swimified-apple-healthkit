@@ -15,7 +15,7 @@ npx cap sync
 
 * [`request_permissions()`](#request_permissions)
 * [`is_available()`](#is_available)
-* [`is_authorized()`](#is_authorized)
+* [`authorization_status()`](#authorization_status)
 * [`fetch_workouts(...)`](#fetch_workouts)
 * [`initialize_background_observer(...)`](#initialize_background_observer)
 * [Interfaces](#interfaces)
@@ -43,13 +43,13 @@ is_available() => Promise<void>
 --------------------
 
 
-### is_authorized()
+### authorization_status()
 
 ```typescript
-is_authorized() => Promise<{ authorized: boolean; }>
+authorization_status() => Promise<{ previously_authorized: boolean; currently_authorized: boolean; }>
 ```
 
-**Returns:** <code>Promise&lt;{ authorized: boolean; }&gt;</code>
+**Returns:** <code>Promise&lt;{ previously_authorized: boolean; currently_authorized: boolean; }&gt;</code>
 
 --------------------
 

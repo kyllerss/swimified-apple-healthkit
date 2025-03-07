@@ -26,14 +26,14 @@
         "slug": "is_available"
       },
       {
-        "name": "is_authorized",
-        "signature": "() => Promise<{ authorized: boolean; }>",
+        "name": "authorization_status",
+        "signature": "() => Promise<{ previously_authorized: boolean; currently_authorized: boolean; }>",
         "parameters": [],
-        "returns": "Promise<{ authorized: boolean; }>",
+        "returns": "Promise<{ previously_authorized: boolean; currently_authorized: boolean; }>",
         "tags": [],
         "docs": "",
         "complexTypes": [],
-        "slug": "is_authorized"
+        "slug": "authorization_status"
       },
       {
         "name": "fetch_workouts",

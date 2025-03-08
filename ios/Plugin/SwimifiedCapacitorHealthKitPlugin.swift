@@ -3,33 +3,45 @@ import Capacitor
 import HealthKit
 import CoreLocation
 
-class BackgroundSessionDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate, URLSessionDataDelegate {
+class UploadWorkoutDelegate: NSObject, URLSessionDataDelegate {
     
-    var receivedData = Data()
-    var response: URLResponse?
-    var completion: ((Data?, URLResponse?, Error?) -> Void)?
-    
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+    var completion: ((Bool) -> Void)?
         
-        print("Session Delegate ----> received data")
-        receivedData.append(data)
-    }
-    
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-        
-        print("Session Delegate ----> response received")
-        self.response = response
-        completionHandler(.allow)
-    }
-    
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
 
         print("Session Delegate ----> completed")
-        completion?(receivedData, response, error)
+        guard let completion = self.completion else {
+            print("Preventing double-completion")
+            return
+        }
+        self.completion = nil
+        
+        if let error = error {
+            print("Background POST task error: \(error)")
+            completion(false)
+            return
+        }
+        
+        if let httpResponse = task.response as? HTTPURLResponse {
+            
+            switch httpResponse.statusCode {
+            case 200...299:
+                print("Successful POST.")
+                completion(true)
+            default:
+                print("Non-success POST: \(httpResponse.statusCode)")
+                completion(false)
+            }
+        } else {
+            
+            print("No valid HTTP response received.")
+            completion(false)
+        }
     }
 }
 
 var healthStore = HKHealthStore()
+var upload_workout_delegate: UploadWorkoutDelegate?
 
 /**
  * Please read the Capacitor iOS Plugin Development Guide
@@ -327,56 +339,38 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             return false
         }
         
-        // setup background task
-        var bg_task_id = UIBackgroundTaskIdentifier.invalid
-        bg_task_id = UIApplication.shared.beginBackgroundTask(withName: "SwimerizeBackgroundWorkoutSync") {
-            
-            UIApplication.shared.endBackgroundTask(bg_task_id)
-            bg_task_id = UIBackgroundTaskIdentifier.invalid
-        }
-        
-        defer {
-                if bg_task_id != UIBackgroundTaskIdentifier.invalid {
-                    UIApplication.shared.endBackgroundTask(bg_task_id)
-                    bg_task_id = UIBackgroundTaskIdentifier.invalid
-                }
-        }
-        
-        let config = URLSessionConfiguration.background(withIdentifier: "com.swimerize.bg_workout_sync_session")
-        config.isDiscretionary = false
-        config.sessionSendsLaunchEvents = true
-        
-        let delegate = BackgroundSessionDelegate()
-        let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
-        
         return await withCheckedContinuation { continuation in
             
-            delegate.completion = { data, response, error in
+//            // setup background task
+//            var bg_task_id = UIBackgroundTaskIdentifier.invalid
+//            bg_task_id = UIApplication.shared.beginBackgroundTask(withName: "com.swimerize.background_sync_workout") {
+//                
+//                UIApplication.shared.endBackgroundTask(bg_task_id)
+//                bg_task_id = UIBackgroundTaskIdentifier.invalid
+//            }
+//            
+//            defer {
+//                    if bg_task_id != UIBackgroundTaskIdentifier.invalid {
+//                        UIApplication.shared.endBackgroundTask(bg_task_id)
+//                        bg_task_id = UIBackgroundTaskIdentifier.invalid
+//                    }
+//            }
             
-                print("Completion delegate triggered")
-                // clear delegate completion in the event completion closure resumed more than once
-                guard delegate.completion != nil else {return}
-                defer {delegate.completion = nil}
-                
-                print("Completion delegate continuing...")
-                
-                if let error = error {
-                    print("Background task error: \(error)")
-                    continuation.resume(returning: false)
-                    return
-                }
-                
-                if let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) {
+            let config = URLSessionConfiguration.background(withIdentifier: "com.swimerize.bg_workout_sync_session")
+            config.isDiscretionary = false
+            config.sessionSendsLaunchEvents = true
+            
+            let delegate = UploadWorkoutDelegate()
+            delegate.completion = {success in
                     
-                    print("Background session succeeded with status: \(httpResponse.statusCode)")
-                    continuation.resume(returning: true)
-                } else {
-                    
-                    print("Unexpected response: \(String(describing: response))")
-                    continuation.resume(returning: false)
-                }
+                print("Deletaget continuation called with success: \(success)")
+                upload_workout_delegate = nil
+                continuation.resume(returning: success)
             }
+            upload_workout_delegate = delegate
             
+            let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+
             let task = session.dataTask(with: request)
             task.resume()
         }

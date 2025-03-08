@@ -9,4 +9,5 @@ CAP_PLUGIN(SwimifiedCapacitorHealthKitPlugin, "SwimifiedCapacitorHealthKit",
            CAP_PLUGIN_METHOD(is_available, CAPPluginReturnPromise);
 	   CAP_PLUGIN_METHOD(initialize_background_observer, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(is_authorized, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(update_upload_properties, CAPPluginReturnPromise);
 )

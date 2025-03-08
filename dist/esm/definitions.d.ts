@@ -15,6 +15,10 @@ export interface SwimifiedCapacitorHealthKitPlugin {
     }): Promise<{
         authorized: boolean;
     }>;
+    update_upload_properties(opts: {
+        upload_url: string;
+        upload_token: string;
+    }): Promise<void>;
 }
 export interface WorkoutResults {
     count: number;

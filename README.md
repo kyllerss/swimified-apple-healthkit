@@ -18,6 +18,7 @@ npx cap sync
 * [`is_authorized()`](#is_authorized)
 * [`fetch_workouts(...)`](#fetch_workouts)
 * [`initialize_background_observer(...)`](#initialize_background_observer)
+* [`update_upload_properties(...)`](#update_upload_properties)
 * [Interfaces](#interfaces)
 
 </docgen-index>
@@ -80,6 +81,19 @@ initialize_background_observer(opts: { start_date: Date; upload_url: string; upl
 | **`opts`** | <code>{ start_date: <a href="#date">Date</a>; upload_url: string; upload_token: string; }</code> |
 
 **Returns:** <code>Promise&lt;{ authorized: boolean; }&gt;</code>
+
+--------------------
+
+
+### update_upload_properties(...)
+
+```typescript
+update_upload_properties(opts: { upload_url: string; upload_token: string; }) => Promise<void>
+```
+
+| Param      | Type                                                       |
+| ---------- | ---------------------------------------------------------- |
+| **`opts`** | <code>{ upload_url: string; upload_token: string; }</code> |
 
 --------------------
 

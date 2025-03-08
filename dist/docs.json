@@ -71,6 +71,22 @@
           "Date"
         ],
         "slug": "initialize_background_observer"
+      },
+      {
+        "name": "update_upload_properties",
+        "signature": "(opts: { upload_url: string; upload_token: string; }) => Promise<void>",
+        "parameters": [
+          {
+            "name": "opts",
+            "docs": "",
+            "type": "{ upload_url: string; upload_token: string; }"
+          }
+        ],
+        "returns": "Promise<void>",
+        "tags": [],
+        "docs": "",
+        "complexTypes": [],
+        "slug": "update_upload_properties"
       }
     ],
     "properties": []

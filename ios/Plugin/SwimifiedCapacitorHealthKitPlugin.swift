@@ -38,7 +38,7 @@ var healthStore = HKHealthStore()
 @objc(SwimifiedCapacitorHealthKitPlugin)
 public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     
-    private var backgroundAnchor: HKQueryAnchor?;
+    var is_observer_active = false
     
     enum HKSampleError: Error {
         
@@ -52,19 +52,15 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         
         super.load()
         
-        self.backgroundAnchor = self._retrieve_background_anchor()
-
         /*
-         * NOTE: Initially the call here was for is_authorized(), but
-         * testing showed that AHK has an init lag where the permission
-         * is not available and will return false if called too close
-         * to the initialization of the app. I am not sure why this
-         * is, but the work-around is to instead check for the existence
-         * of an archived anchor query which implies authorization as
-         * granted at some point.
+         * Only activate the background observer if AHK has been authorized.
          *
-         * A separate flow at app bootstrap will check explicitly for
-         * the authorization permission and warn user if turned off.
+         * NOTE: Initially the call here was for is_authorized(),
+         * but AHK does not support determining if a user authorized
+         * 'read' access to AHK (only 'write' access). As such,
+         * the only option is to check to see if any of the manually-
+         * maintained execution state is present to determine if
+         * the user ever authorized AHK.
          */
         let anchor_query = self._retrieve_background_anchor()
         if anchor_query != nil {
@@ -72,6 +68,28 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         } else {
             print("HealthKit not authorized - skipping starting observer query.")
         }
+    }
+
+    func _update_upload_properties(upload_target_url: String, upload_token: String) {
+        
+        // persist upload properties
+        UserDefaults.standard.set(upload_target_url, forKey: "upload_target_url")
+        UserDefaults.standard.set(upload_token, forKey: "upload_token")
+    }
+    
+    @objc func update_upload_properties(_ call: CAPPluginCall) {
+                
+        guard let upload_target_url = call.getString("upload_url") else {
+            return call.reject("Parameter upload_url is required.")
+        }
+        
+        guard let upload_token = call.getString("upload_token") else {
+            return call.reject("Parameter upload_token is required.")
+        }
+
+        _update_upload_properties(upload_target_url: upload_target_url, upload_token: upload_token)
+            
+        return call.resolve()
     }
     
     @objc func initialize_background_observer(_ call: CAPPluginCall) {
@@ -89,17 +107,19 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
                 
         // persist upload properties
-        UserDefaults.standard.set(upload_target_url, forKey: "upload_target_url")
-        UserDefaults.standard.set(upload_token, forKey: "upload_token")
-        UserDefaults.standard.set(start_date, forKey: "last_sync_start_timestamp")
+        _update_upload_properties(upload_target_url: upload_target_url, upload_token: upload_token)
 
-        print("------> Registered backgroundStartDate: \(start_date)")
-        
-        let shouldResetAnchor = call.getBool( "reset_anchor") ?? false
-        if shouldResetAnchor {
-            
-            backgroundAnchor = nil
-            _store_background_anchor(nil) // clear out stored anchor (if any)
+        /*
+         * When this is first ever initialized (eg. during authorization process)
+         * then we need to establish an anchor query starting from 'now'.
+         *
+         * Any workouts that exist prior to now will be manually sync'ed by
+         * the app, which will give users the ability of controlling which
+         * workouts to include/exclude.
+         */
+        let existing_anchor = _retrieve_background_anchor()
+        if (existing_anchor == nil) {
+            _initialize_background_anchor(start_timestamp: start_date)
         }
         
         _start_background_workout_observer() // initalizes anchor query and observer
@@ -108,6 +128,21 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         let authorized = _is_authorized()
         
         call.resolve(["authorized": authorized])
+    }
+    
+    private func _initialize_background_anchor(start_timestamp: Date) {
+        
+        self._internal_fetch_workouts(
+            startDate: start_timestamp,
+            endDate: nil,
+            anchor: nil
+        ) { [weak self] workouts, new_anchor in
+            
+            guard let self = self else {return}
+            
+            print("-----> initializing anchor: \(workouts.count)")
+            self._store_background_anchor(new_anchor)
+        }
     }
 
     private func _store_background_anchor(_ anchor: HKQueryAnchor?) {
@@ -156,17 +191,15 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
 
         return (upload_url: upload_url, upload_token: upload_token)
     }
-    
-    private func _retrieve_last_sync_start_timestamp() -> Date {
         
-        if let timestamp = UserDefaults.standard.object(forKey: "last_sync_start_timestamp") as? Date {
-            return timestamp
-        } else {
-            return Calendar.current.date(byAdding: .year, value: -10, to: Date()) ?? Date()
-        }
-    }
-    
+    /**
+     * Assumes background anchor initialized.
+     */
     private func _start_background_workout_observer() {
+        
+        if self.is_observer_active {
+            return
+        }
         
         print("Function start_background_workout_observer called.")
         
@@ -195,14 +228,13 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                 return
             }
             
-            let start_timestamp = self._retrieve_last_sync_start_timestamp()
-            print("------> start_background_workout_observer() -> start timestamp: \(String(describing: start_timestamp))")
-
+            let current_anchor = self._retrieve_background_anchor()
+            
             self._internal_fetch_workouts(
-                startDate: start_timestamp,
+                startDate: nil,
                 endDate: nil,
-                anchor: self.backgroundAnchor
-            ) { [weak self] workouts, newAnchor in
+                anchor: current_anchor
+            ) { [weak self] workouts, new_anchor in
                 
                 guard let self = self else {return}
                 
@@ -215,8 +247,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                         print("Workout background call successfully submitted.")
 
                         // successfully processed callback, so store updated anchor
-                        self.backgroundAnchor = newAnchor
-                        self._store_background_anchor(newAnchor)
+                        self._store_background_anchor(new_anchor)
 
                     } else {
                         print("Failed to POST background workout data.")
@@ -229,6 +260,8 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
         
         healthStore.execute(observerQuery)
+        
+        self.is_observer_active = true
     }
     
     /**
@@ -453,14 +486,20 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
         
         let workoutType = HKObjectType.workoutType()
-        
+                
+        /*
+         * Only use a predicate if anchor is nil.
+         */
         var predicate: NSPredicate?
-        if let start = effective_start_date, let end = endDate {
-            predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
-        } else if let start = effective_start_date {
-            predicate = HKQuery.predicateForSamples(withStart: start, end: nil, options: .strictStartDate)
-        } else if let end = endDate {
-            predicate = HKQuery.predicateForSamples(withStart: nil, end: end, options: .strictEndDate)
+        if (anchor == nil) {
+            
+            if let start = effective_start_date, let end = endDate {
+                predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+            } else if let start = effective_start_date {
+                predicate = HKQuery.predicateForSamples(withStart: start, end: nil, options: .strictStartDate)
+            } else if let end = endDate {
+                predicate = HKQuery.predicateForSamples(withStart: nil, end: end, options: .strictEndDate)
+            }
         }
         
         let query = HKAnchoredObjectQuery(

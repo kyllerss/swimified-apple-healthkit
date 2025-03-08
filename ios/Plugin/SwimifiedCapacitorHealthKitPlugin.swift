@@ -39,7 +39,6 @@ var healthStore = HKHealthStore()
 public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     
     private var backgroundAnchor: HKQueryAnchor?;
-    private var backgroundStartDate: Date?;
     
     enum HKSampleError: Error {
         
@@ -77,7 +76,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     
     @objc func initialize_background_observer(_ call: CAPPluginCall) {
         
-        guard let startDate = call.getDate("start_date") else {
+        guard let start_date = call.getDate("start_date") else {
             return call.reject("Parameter start_date is required.")
         }
         
@@ -88,14 +87,13 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         guard let upload_token = call.getString("upload_token") else {
             return call.reject("Parameter upload_token is required.")
         }
-        
-        self.backgroundStartDate = startDate
-        
+                
         // persist upload properties
         UserDefaults.standard.set(upload_target_url, forKey: "upload_target_url")
         UserDefaults.standard.set(upload_token, forKey: "upload_token")
-        
-        print("------> Registered backgroundStartDate: \(startDate) \(self.backgroundStartDate!)")
+        UserDefaults.standard.set(start_date, forKey: "last_sync_start_timestamp")
+
+        print("------> Registered backgroundStartDate: \(start_date)")
         
         let shouldResetAnchor = call.getBool( "reset_anchor") ?? false
         if shouldResetAnchor {
@@ -159,6 +157,15 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         return (upload_url: upload_url, upload_token: upload_token)
     }
     
+    private func _retrieve_last_sync_start_timestamp() -> Date {
+        
+        if let timestamp = UserDefaults.standard.object(forKey: "last_sync_start_timestamp") as? Date {
+            return timestamp
+        } else {
+            return Calendar.current.date(byAdding: .year, value: -10, to: Date()) ?? Date()
+        }
+    }
+    
     private func _start_background_workout_observer() {
         
         print("Function start_background_workout_observer called.")
@@ -188,10 +195,11 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                 return
             }
             
-            print("------> start_background_workout_observer() -> backgroundStartDate: \(String(describing: self.backgroundStartDate))")
+            let start_timestamp = self._retrieve_last_sync_start_timestamp()
+            print("------> start_background_workout_observer() -> start timestamp: \(String(describing: start_timestamp))")
 
             self._internal_fetch_workouts(
-                startDate: self.backgroundStartDate,
+                startDate: start_timestamp,
                 endDate: nil,
                 anchor: self.backgroundAnchor
             ) { [weak self] workouts, newAnchor in
@@ -439,12 +447,17 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     
         print("----> Internal fetch workouts...");
         
+        var effective_start_date = startDate
+        if startDate == nil && endDate == nil && anchor == nil {
+            effective_start_date = Date()
+        }
+        
         let workoutType = HKObjectType.workoutType()
         
         var predicate: NSPredicate?
-        if let start = startDate, let end = endDate {
+        if let start = effective_start_date, let end = endDate {
             predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
-        } else if let start = startDate {
+        } else if let start = effective_start_date {
             predicate = HKQuery.predicateForSamples(withStart: start, end: nil, options: .strictStartDate)
         } else if let end = endDate {
             predicate = HKQuery.predicateForSamples(withStart: nil, end: end, options: .strictEndDate)

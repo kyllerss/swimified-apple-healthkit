@@ -2,6 +2,12 @@ import Foundation
 import Capacitor
 import HealthKit
 import CoreLocation
+import os
+
+func log(_ message: String) {
+    
+    os_log("SwimifiedCapacitorHealthKitPlugin: %{public}@", log: OSLog.default, type: .debug, message)
+}
 
 class UploadWorkoutDelegate: NSObject, URLSessionDataDelegate {
     
@@ -9,15 +15,15 @@ class UploadWorkoutDelegate: NSObject, URLSessionDataDelegate {
         
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
 
-        print("Session Delegate ----> completed")
+        log("Session Delegate ----> completed")
         guard let completion = self.completion else {
-            print("Preventing double-completion")
+            log("Preventing double-completion")
             return
         }
         self.completion = nil
         
         if let error = error {
-            print("Background POST task error: \(error)")
+            log("Background POST task error: \(error)")
             completion(false)
             return
         }
@@ -26,15 +32,15 @@ class UploadWorkoutDelegate: NSObject, URLSessionDataDelegate {
             
             switch httpResponse.statusCode {
             case 200...299:
-                print("Successful POST.")
+                log("Successful POST.")
                 completion(true)
             default:
-                print("Non-success POST: \(httpResponse.statusCode)")
+                log("Non-success POST: \(httpResponse.statusCode)")
                 completion(false)
             }
         } else {
             
-            print("No valid HTTP response received.")
+            log("No valid HTTP response received.")
             completion(false)
         }
     }
@@ -60,7 +66,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     @MainActor
     public override func load() {
         
-        print("Lifecycle method load() called on HealthKit plugin.")
+        log("Lifecycle method load() called on HealthKit plugin.")
         
         super.load()
         
@@ -76,17 +82,22 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
          */
         let anchor_query = self._retrieve_background_anchor()
         if anchor_query != nil {
+            log("load() starting background observer")
             self._start_background_workout_observer()
         } else {
-            print("HealthKit not authorized - skipping starting observer query.")
+            log("HealthKit not authorized - skipping starting observer query.")
         }
     }
 
-    func _update_upload_properties(upload_target_url: String, upload_token: String) {
+    func _update_upload_properties(upload_target_url: String, upload_token: String, upload_start_date: Date?) {
         
         // persist upload properties
         UserDefaults.standard.set(upload_target_url, forKey: "upload_target_url")
         UserDefaults.standard.set(upload_token, forKey: "upload_token")
+        
+        if let start_date = upload_start_date {
+            UserDefaults.standard.set(start_date, forKey: "upload_start_date")
+        }
     }
     
     @objc func update_upload_properties(_ call: CAPPluginCall) {
@@ -99,7 +110,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             return call.reject("Parameter upload_token is required.")
         }
 
-        _update_upload_properties(upload_target_url: upload_target_url, upload_token: upload_token)
+        _update_upload_properties(upload_target_url: upload_target_url, upload_token: upload_token, upload_start_date: nil)
             
         return call.resolve()
     }
@@ -119,7 +130,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
                 
         // persist upload properties
-        _update_upload_properties(upload_target_url: upload_target_url, upload_token: upload_token)
+        _update_upload_properties(upload_target_url: upload_target_url, upload_token: upload_token, upload_start_date: start_date)
 
         /*
          * When this is first ever initialized (eg. during authorization process)
@@ -130,37 +141,64 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
          * workouts to include/exclude.
          */
         let existing_anchor = _retrieve_background_anchor()
-        if (existing_anchor == nil) {
-            _initialize_background_anchor(start_timestamp: start_date)
+        log("initialize_background_observer is null? \(existing_anchor == nil)")
+        
+        Task { @MainActor in
+            
+            if (existing_anchor == nil) {
+                log("initialize_background_observer initializing anchor with start_date: \(start_date)")
+                await self._initialize_background_anchor(start_timestamp: start_date)
+            }
+            
+            _start_background_workout_observer() // initalizes anchor query and observer
+            
+            // determine if user needs to authorize again
+            let authorized = _is_authorized()
+            
+            call.resolve(["authorized": authorized])
         }
-        
-        _start_background_workout_observer() // initalizes anchor query and observer
-        
-        // determine if user needs to authorize again
-        let authorized = _is_authorized()
-        
-        call.resolve(["authorized": authorized])
     }
     
-    private func _initialize_background_anchor(start_timestamp: Date) {
+    private func _initialize_background_anchor(start_timestamp: Date) async {
         
-        self._internal_fetch_workouts(
-            startDate: start_timestamp,
-            endDate: nil,
-            anchor: nil
-        ) { [weak self] workouts, new_anchor in
+        log("_initialize_background_anchor called \(start_timestamp)")
+        return await withCheckedContinuation { continuation in
             
-            guard let self = self else {return}
-            
-            print("-----> initializing anchor: \(workouts.count)")
-            self._store_background_anchor(new_anchor)
+            self._internal_fetch_workouts(
+                startDate: start_timestamp,
+                endDate: nil,
+                anchor: nil,
+                caller_id: "_initialize_background_anchor"
+            ) { [weak self] workouts, new_anchor in
+                
+                guard let self = self else {return}
+                
+                log("-----> _initialize_background_anchor finally initializing anchor: \(workouts.count)")
+                self._store_background_anchor(new_anchor)
+                
+                continuation.resume()
+            }
         }
     }
 
     private func _store_background_anchor(_ anchor: HKQueryAnchor?) {
         
-        print("-----> Storing background anchor")
-        
+//        log("-----> Storing background anchor: Nil? \(anchor == nil)")
+//        tmp_anchor_query = anchor
+//        tmp_anchor_version += 1
+//
+//        if let tmp_anchor = tmp_anchor_query {
+//            
+//            do {
+//
+//                let data = try NSKeyedArchiver.archivedData(withRootObject: tmp_anchor, requiringSecureCoding: true)
+//                let base64 = data.base64EncodedString()
+//                log("Anchor: \(base64)")
+//
+//            } catch {
+//                log("Error displaying anchor: \(error)")
+//            }
+//        }
         if anchor == nil {
             
             UserDefaults.standard.removeObject(forKey: "backgroundAnchorKey")
@@ -172,17 +210,33 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             let data = try NSKeyedArchiver.archivedData(withRootObject: anchor!, requiringSecureCoding: true)
             UserDefaults.standard.set(data, forKey: "backgroundAnchorKey")
             
-            print("-------> Stored anchor query!")
+            log("-------> Stored anchor query!")
         } catch {
-            print("Failed to store background anchor in UserDefaults: \(error)")
+            log("Failed to store background anchor in UserDefaults: \(error)")
         }
     }
     
     private func _retrieve_background_anchor() -> HKQueryAnchor? {
         
-        print("-----> Fetching background anchor")
+//        log("-----> Fetching background anchor")
+//        log("Returning tmp_anchor_query with version \(tmp_anchor_version)")
+//        if let anchor = tmp_anchor_query {
+//            
+//            do {
+//
+//                let data = try NSKeyedArchiver.archivedData(withRootObject: anchor, requiringSecureCoding: true)
+//                let base64 = data.base64EncodedString()
+//                log("Anchor: \(base64)")
+//
+//            } catch {
+//                log("Error displaying anchor: \(error)")
+//            }
+//        }
+//        
+//        return tmp_anchor_query
         
         guard let data = UserDefaults.standard.data(forKey: "backgroundAnchorKey") else {
+            log("XXX -> Retrieved nil for background anchor!")
             return nil
         }
 
@@ -191,7 +245,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             let unarchived = try NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data)
             return unarchived
         } catch {
-            print("Failed to retrieve background anchor from UserDefults: \(error) ")
+            log("Failed to retrieve background anchor from UserDefults: \(error) ")
             return nil
         }
     }
@@ -203,6 +257,10 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
 
         return (upload_url: upload_url, upload_token: upload_token)
     }
+    
+    private func _retrieve_upload_start_date() -> Date {
+        return UserDefaults.standard.object(forKey: "upload_start_date") as? Date ?? Date()
+    }
         
     /**
      * Assumes background anchor initialized.
@@ -210,19 +268,20 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     private func _start_background_workout_observer() {
         
         if self.is_observer_active {
+            log("Function _start_background_workout_observer called while observer is already active.")
             return
         }
         
-        print("Function start_background_workout_observer called.")
+        log("Function _start_background_workout_observer called.")
         
         let workoutType = HKObjectType.workoutType()
         
         healthStore.enableBackgroundDelivery(for: workoutType, frequency: .immediate) {success, error in
         
             if let error = error {
-                print("Failed to enable background delivery: \(error.localizedDescription)")
+                log("(healthStore.enableBackgroundDelivery) Failed to enable background delivery: \(error.localizedDescription)")
             } else {
-                print("Background delivery enabled: \(success)")
+                log("(healthStore.enableBackgroundDelivery) Background delivery enabled: \(success)")
             }
         }
         
@@ -231,49 +290,59 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             [weak self] _, completionHandler, error in
             guard let self = self else {return}
             
-            print("------> Observer query invoked!")
+            log("------> Observer query invoked!")
             
             if let error = error {
                 
-                print("Observer query error: \(error.localizedDescription)")
+                log("Observer query error: \(error.localizedDescription)")
                 completionHandler()
                 return
             }
             
             let current_anchor = self._retrieve_background_anchor()
+            let start_date = self._retrieve_upload_start_date()
+//            log("Observer query current anchor is nil? \(current_anchor == nil) - v(\(tmp_anchor_version))")
             
             self._internal_fetch_workouts(
-                startDate: nil,
+                startDate: start_date,
                 endDate: nil,
-                anchor: current_anchor
+                anchor: current_anchor,
+                caller_id: "_start_background_workout_observer"
             ) { [weak self] workouts, new_anchor in
                 
                 guard let self = self else {return}
                 
-                print("-----> Observer query -> Retrieved background workouts: \(workouts.count)")
+                log("-----> Observer query -> Retrieved background workouts: \(workouts.count)")
                 Task {
                     
                     let success = await self._post_workout(workouts)
                     if success {
 
-                        print("Workout background call successfully submitted.")
+                        log("Workout background call successfully submitted.")
 
                         // successfully processed callback, so store updated anchor
                         self._store_background_anchor(new_anchor)
 
                     } else {
-                        print("Failed to POST background workout data.")
+                        
+                        log("Failed to POST background workout data.")
                     }
                 }
             }
             
+            log("------> Observer query finished (before completion handler)!")
+
             // finalize callback
             completionHandler()
+            
+            log("------> Observer query finished (after completion handler)!")
+
         }
         
         healthStore.execute(observerQuery)
         
         self.is_observer_active = true
+        log("------> Observer query active!")
     }
     
     /**
@@ -302,20 +371,20 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     private func _post_workout(_ results: [JSObject]) async -> Bool {
         
         if results.count == 0 {
-            print("No workouts to upload.")
-            return true
+            log("No workouts to upload.")
+            return false
         }
         
-        print("--------> Posting workout")
+        log("--------> Posting workout")
         
         let upload_properties = self._retrieve_upload_endpoint_properties()
         let upload_url = upload_properties.upload_url
         let upload_token = upload_properties.upload_token
         
-        print("-----> Posting to \(upload_url) w/ token \(upload_token)")
+        log("-----> Posting to \(upload_url) w/ token \(upload_token)")
         
         guard let url = URL(string: upload_url) else {
-            print("Unable to determine POST url endpoint: \(upload_url)")
+            log("Unable to determine POST url endpoint: \(upload_url)")
             return false
         }
                 
@@ -335,7 +404,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             
         } catch {
             
-            print("Error serializing workout for POST: \(error)")
+            log("Error serializing workout for POST: \(error)")
             return false
         }
         
@@ -363,7 +432,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             let delegate = UploadWorkoutDelegate()
             delegate.completion = {success in
                     
-                print("Deletaget continuation called with success: \(success)")
+                log("Deletaget continuation called with success: \(success)")
                 upload_workout_delegate = nil
                 continuation.resume(returning: success)
             }
@@ -469,31 +538,28 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         startDate: Date?,
         endDate: Date?,
         anchor: HKQueryAnchor?,
+        caller_id: String,
         completion: @escaping([JSObject], HKQueryAnchor?) -> Void
     ) {
     
-        print("----> Internal fetch workouts...");
+        log("----> \(caller_id) Internal fetch workouts... \(String(describing: startDate)) \(String(describing: endDate)) \(anchor == nil)");
         
         var effective_start_date = startDate
         if startDate == nil && endDate == nil && anchor == nil {
+            log("_internal_fetch_workouts -> defaulting to effective_start_date to now...")
             effective_start_date = Date()
         }
         
         let workoutType = HKObjectType.workoutType()
                 
-        /*
-         * Only use a predicate if anchor is nil.
-         */
         var predicate: NSPredicate?
-        if (anchor == nil) {
-            
-            if let start = effective_start_date, let end = endDate {
-                predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
-            } else if let start = effective_start_date {
-                predicate = HKQuery.predicateForSamples(withStart: start, end: nil, options: .strictStartDate)
-            } else if let end = endDate {
-                predicate = HKQuery.predicateForSamples(withStart: nil, end: end, options: .strictEndDate)
-            }
+        log("Initializing predicate for _internal_fetch_workouts...")
+        if let start = effective_start_date, let end = endDate {
+            predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        } else if let start = effective_start_date {
+            predicate = HKQuery.predicateForSamples(withStart: start, end: nil, options: .strictStartDate)
+        } else if let end = endDate {
+            predicate = HKQuery.predicateForSamples(withStart: nil, end: end, options: .strictEndDate)
         }
         
         let query = HKAnchoredObjectQuery(
@@ -501,26 +567,28 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             predicate: predicate,
             anchor: anchor,
             limit: HKObjectQueryNoLimit
-        ) { [weak self] query, newSamples, deletedSamples, newAnchor, error in
+        ) { [weak self] query, newSamples, deletedSamples, new_anchor, error in
             
             guard let self = self else { return }
             
             if let error = error {
-                print("Error fetching workouts: \(error.localizedDescription)")
+                log("\(caller_id) Error fetching workouts: \(error.localizedDescription)")
                 completion([], anchor)
                 return
             }
             
             guard let workouts = newSamples as? [HKWorkout], !workouts.isEmpty else {
                 
-                completion([], newAnchor)
+                log("\(caller_id) _internal_fetch_workouts: No workouts found")
+                completion([], new_anchor)
                 return
             }
 
             Task {
                 
                 let results = await self.generate_sample_output(results: workouts) ?? []
-                completion(results, newAnchor)
+                log("\(caller_id) _internal_fetch_workouts: \(results.count) workouts found")
+                completion(results, new_anchor)
             }
         }
         
@@ -541,7 +609,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         startDate = reordered_dates.start
         endDate = reordered_dates.end
 
-        _internal_fetch_workouts(startDate: startDate, endDate: endDate, anchor: nil) { (workout_results, _) in
+        _internal_fetch_workouts(startDate: startDate, endDate: endDate, anchor: nil, caller_id: "fetch_workouts") { (workout_results, _) in
         
             call.resolve([
                 "count": workout_results.count,
@@ -678,7 +746,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                 workout_obj["CLLocations"] = cl_locations
 
             } catch {
-                print("Unable to process CLLocations for ", sample.uuid.uuidString, error)
+                log("Unable to process CLLocations for \(sample.uuid.uuidString) \(error)")
             }
 
             output.append(workout_obj)
@@ -913,7 +981,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         {query, quantity, dateInterval, HKSample, done, error in
                         
             if let resultError = error {
-                print("Error when fetching hr series data: ", resultError)
+                log("Error when fetching hr series data: \(resultError)")
                 return completion(.success(elements)) // return results so far
             }
                 
@@ -999,7 +1067,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                                           limit: HKObjectQueryNoLimit)
         { _, samples, _, _, error in
             if let resultError = error {
-                print("Error when fetching route: ", resultError)
+                log("Error when fetching route: \(resultError)")
                 return completion(.failure(resultError))
             }
             

@@ -12,19 +12,26 @@ func log(_ message: String) {
 class UploadWorkoutDelegate: NSObject, URLSessionDataDelegate {
     
     var completion: ((Bool) -> Void)?
+//    private var has_completed = false
         
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
 
-        log("Session Delegate ----> completed")
-        guard let completion = self.completion else {
-            log("Preventing double-completion")
+        log("Session Delegate ----> completed callback!")
+//        guard !has_completed else {
+//            log("Preventing double-completion")
+//            return
+//        }
+//        has_completed = true
+        
+        guard let local_completion = self.completion else {
+            log("Nil completion! - returning")
             return
         }
-        self.completion = nil
+//        self.completion = nil
         
         if let error = error {
             log("Background POST task error: \(error)")
-            completion(false)
+            local_completion(false)
             return
         }
         
@@ -33,21 +40,21 @@ class UploadWorkoutDelegate: NSObject, URLSessionDataDelegate {
             switch httpResponse.statusCode {
             case 200...299:
                 log("Successful POST.")
-                completion(true)
+                local_completion(true)
             default:
                 log("Non-success POST: \(httpResponse.statusCode)")
-                completion(false)
+                local_completion(false)
             }
         } else {
             
             log("No valid HTTP response received.")
-            completion(false)
+            local_completion(false)
         }
     }
 }
 
 var healthStore = HKHealthStore()
-var upload_workout_delegate: UploadWorkoutDelegate?
+var is_observer_active = false
 
 /**
  * Please read the Capacitor iOS Plugin Development Guide
@@ -55,9 +62,7 @@ var upload_workout_delegate: UploadWorkoutDelegate?
  */
 @objc(SwimifiedCapacitorHealthKitPlugin)
 public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
-    
-    var is_observer_active = false
-    
+        
     enum HKSampleError: Error {
         
         case workoutRouteRequestFailed
@@ -128,7 +133,9 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         guard let upload_token = call.getString("upload_token") else {
             return call.reject("Parameter upload_token is required.")
         }
-                
+        
+        log("initialize_background_observer called from JS context: \(start_date), \(upload_token)")
+        
         // persist upload properties
         _update_upload_properties(upload_target_url: upload_target_url, upload_token: upload_token, upload_start_date: start_date)
 
@@ -143,19 +150,24 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         let existing_anchor = _retrieve_background_anchor()
         log("initialize_background_observer is null? \(existing_anchor == nil)")
         
-        Task { @MainActor in
+        // Commented out @MainActor -> Task { @MainActor in
+        Task {
             
             if (existing_anchor == nil) {
+                
                 log("initialize_background_observer initializing anchor with start_date: \(start_date)")
                 await self._initialize_background_anchor(start_timestamp: start_date)
+                
+                let stored_anchor = self._retrieve_background_anchor()
+                if stored_anchor == nil {
+                    call.resolve(["authorized": false])
+                    return;
+                }
             }
             
             _start_background_workout_observer() // initalizes anchor query and observer
-            
-            // determine if user needs to authorize again
-            let authorized = _is_authorized()
-            
-            call.resolve(["authorized": authorized])
+                        
+            call.resolve(["authorized": true])
         }
     }
     
@@ -265,15 +277,16 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     /**
      * Assumes background anchor initialized.
      */
+//    @MainActor
     private func _start_background_workout_observer() {
         
-        if self.is_observer_active {
+        if is_observer_active {
             log("Function _start_background_workout_observer called while observer is already active.")
             return
         }
         
         log("Function _start_background_workout_observer called.")
-        
+         
         let workoutType = HKObjectType.workoutType()
         
         healthStore.enableBackgroundDelivery(for: workoutType, frequency: .immediate) {success, error in
@@ -282,67 +295,83 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                 log("(healthStore.enableBackgroundDelivery) Failed to enable background delivery: \(error.localizedDescription)")
             } else {
                 log("(healthStore.enableBackgroundDelivery) Background delivery enabled: \(success)")
-            }
-        }
-        
-        let observerQuery = HKObserverQuery(sampleType: workoutType, predicate: nil) {
-            
-            [weak self] _, completionHandler, error in
-            guard let self = self else {return}
-            
-            log("------> Observer query invoked!")
-            
-            if let error = error {
                 
-                log("Observer query error: \(error.localizedDescription)")
-                completionHandler()
-                return
-            }
-            
-            let current_anchor = self._retrieve_background_anchor()
-            let start_date = self._retrieve_upload_start_date()
-//            log("Observer query current anchor is nil? \(current_anchor == nil) - v(\(tmp_anchor_version))")
-            
-            self._internal_fetch_workouts(
-                startDate: start_date,
-                endDate: nil,
-                anchor: current_anchor,
-                caller_id: "_start_background_workout_observer"
-            ) { [weak self] workouts, new_anchor in
-                
-                guard let self = self else {return}
-                
-                log("-----> Observer query -> Retrieved background workouts: \(workouts.count)")
-                Task {
+                let observerQuery = HKObserverQuery(sampleType: workoutType, predicate: nil) {
                     
-                    let success = await self._post_workout(workouts)
-                    if success {
-
-                        log("Workout background call successfully submitted.")
-
-                        // successfully processed callback, so store updated anchor
-                        self._store_background_anchor(new_anchor)
-
-                    } else {
+                    [weak self] _, completionHandler, error in
+                    guard let self = self else {
+                        log("HKObserverQuery reference to 'self' is nil!")
+                        return
+                    }
+                    
+                    log("------> Observer query invoked!")
+                    
+                    if let error = error {
                         
-                        log("Failed to POST background workout data.")
+                        log("Observer query error: \(error.localizedDescription)")
+                        completionHandler()
+                        return
+                    }
+                    
+                    // setup background task
+                    var bg_task_id = UIBackgroundTaskIdentifier.invalid
+                    bg_task_id = UIApplication.shared.beginBackgroundTask(withName: "com.swimerize.background_sync_workout") {
+                        
+                        UIApplication.shared.endBackgroundTask(bg_task_id)
+                        bg_task_id = UIBackgroundTaskIdentifier.invalid
+                    }
+                    
+                    defer {
+                            if bg_task_id != UIBackgroundTaskIdentifier.invalid {
+                                UIApplication.shared.endBackgroundTask(bg_task_id)
+                                bg_task_id = UIBackgroundTaskIdentifier.invalid
+                            }
+                    }
+                    
+                    let current_anchor = self._retrieve_background_anchor()
+                    let start_date = self._retrieve_upload_start_date()
+        //            log("Observer query current anchor is nil? \(current_anchor == nil) - v(\(tmp_anchor_version))")
+                    
+                    Task {
+                        self._internal_fetch_workouts(
+                            startDate: start_date,
+                            endDate: nil,
+                            anchor: current_anchor,
+                            caller_id: "_start_background_workout_observer"
+                        ) { [weak self] workouts, new_anchor in
+                            
+                            guard let self = self else {return}
+                            
+                            log("-----> Observer query -> Retrieved background workouts: \(workouts.count)")
+                                
+                            self._post_workout(workouts) { success in
+                             
+                                if success {
+                                    
+                                    log("POST background call successfully submitted.")
+                                    
+                                    // successfully processed callback, so store updated anchor
+                                    self._store_background_anchor(new_anchor)
+                                    
+                                } else {
+                                    
+                                    log("Failed to POST background workout data.")
+                                }
+                                
+                                // finalize callback
+                                completionHandler()
+                            }
+                        }
                     }
                 }
+                
+                healthStore.execute(observerQuery)
+                
+                is_observer_active = true
+                log("------> Observer query registered!")
+
             }
-            
-            log("------> Observer query finished (before completion handler)!")
-
-            // finalize callback
-            completionHandler()
-            
-            log("------> Observer query finished (after completion handler)!")
-
         }
-        
-        healthStore.execute(observerQuery)
-        
-        self.is_observer_active = true
-        log("------> Observer query active!")
     }
     
     /**
@@ -367,12 +396,12 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         return object
     }
 
-    @MainActor
-    private func _post_workout(_ results: [JSObject]) async -> Bool {
+    private func _post_workout(_ results: [JSObject], completion: @escaping (Bool) -> Void) {
         
         if results.count == 0 {
             log("No workouts to upload.")
-            return false
+            completion(false)
+            return
         }
         
         log("--------> Posting workout")
@@ -385,7 +414,8 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         
         guard let url = URL(string: upload_url) else {
             log("Unable to determine POST url endpoint: \(upload_url)")
-            return false
+            completion(false)
+            return
         }
                 
         var request = URLRequest(url: url)
@@ -405,43 +435,31 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         } catch {
             
             log("Error serializing workout for POST: \(error)")
-            return false
+            completion(false)
+            return
+        }
+                    
+        log("_post_workout session loading started...")
+        
+        let config = URLSessionConfiguration.background(withIdentifier: "com.swimerize.bg_workout_sync_session")
+        config.isDiscretionary = false
+        config.sessionSendsLaunchEvents = true
+        
+        let upload_workout_delegate = UploadWorkoutDelegate()
+        upload_workout_delegate.completion = {success in
+                
+            log("_post_workout continuation called with success: \(success)")
+            completion(success)
         }
         
-        return await withCheckedContinuation { continuation in
-            
-//            // setup background task
-//            var bg_task_id = UIBackgroundTaskIdentifier.invalid
-//            bg_task_id = UIApplication.shared.beginBackgroundTask(withName: "com.swimerize.background_sync_workout") {
-//                
-//                UIApplication.shared.endBackgroundTask(bg_task_id)
-//                bg_task_id = UIBackgroundTaskIdentifier.invalid
-//            }
-//            
-//            defer {
-//                    if bg_task_id != UIBackgroundTaskIdentifier.invalid {
-//                        UIApplication.shared.endBackgroundTask(bg_task_id)
-//                        bg_task_id = UIBackgroundTaskIdentifier.invalid
-//                    }
-//            }
-            
-            let config = URLSessionConfiguration.background(withIdentifier: "com.swimerize.bg_workout_sync_session")
-            config.isDiscretionary = false
-            config.sessionSendsLaunchEvents = true
-            
-            let delegate = UploadWorkoutDelegate()
-            delegate.completion = {success in
-                    
-                log("Deletaget continuation called with success: \(success)")
-                upload_workout_delegate = nil
-                continuation.resume(returning: success)
-            }
-            upload_workout_delegate = delegate
-            
-            let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+        let session = URLSession(configuration: config, delegate: upload_workout_delegate, delegateQueue: nil)
 
-            let task = session.dataTask(with: request)
-            task.resume()
+        let task = session.dataTask(with: request)
+        task.resume()
+        
+        // prevents it from being dealocated
+        let _ = { [upload_workout_delegate] in
+            log("_post_workout delegate retained... \(upload_workout_delegate.hashValue)")
         }
     }
     

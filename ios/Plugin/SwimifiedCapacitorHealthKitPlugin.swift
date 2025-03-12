@@ -104,18 +104,21 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
     }
 
+    @MainActor
     func _update_upload_properties(upload_target_url: String, upload_token: String, upload_start_date: Date?) {
         
+        log("Updating upload properties: \(upload_target_url), \(upload_token), \(String(describing: upload_start_date))")
         // persist upload properties
         UserDefaults.standard.set(upload_target_url, forKey: "upload_target_url")
         UserDefaults.standard.set(upload_token, forKey: "upload_token")
         
         if let start_date = upload_start_date {
             UserDefaults.standard.set(start_date, forKey: "upload_start_date")
+            log("Stored start_date in UserDefaults: \(start_date)")
         }
     }
     
-    @objc func update_upload_properties(_ call: CAPPluginCall) {
+    @MainActor @objc func update_upload_properties(_ call: CAPPluginCall) {
                 
         guard let upload_target_url = call.getString("upload_url") else {
             return call.reject("Parameter upload_url is required.")
@@ -130,7 +133,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         return call.resolve()
     }
     
-    @objc func initialize_background_observer(_ call: CAPPluginCall) {
+    @MainActor @objc func initialize_background_observer(_ call: CAPPluginCall) {
         
         guard let start_date = call.getDate("start_date") else {
             return call.reject("Parameter start_date is required.")
@@ -174,13 +177,14 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                     return;
                 }
             }
-            
-            _start_background_workout_observer() // initalizes anchor query and observer
-                        
-            call.resolve(["authorized": true])
         }
+
+        _start_background_workout_observer() // initalizes anchor query and observer
+                    
+        call.resolve(["authorized": true])
     }
     
+    @MainActor
     private func _initialize_background_anchor(start_timestamp: Date) async {
         
         log("_initialize_background_anchor called \(start_timestamp)")
@@ -203,11 +207,13 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
     }
 
+    @MainActor
     private func _store_background_anchor(_ anchor: HKQueryAnchor?) {
         
         if anchor == nil {
             
             UserDefaults.standard.removeObject(forKey: "backgroundAnchorKey")
+            log("Removed anchor from UserDefaults")
             return
         }
         
@@ -222,6 +228,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
     }
     
+    @MainActor
     private func _retrieve_background_anchor() -> HKQueryAnchor? {
         
         guard let data = UserDefaults.standard.data(forKey: "backgroundAnchorKey") else {
@@ -232,6 +239,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         do {
             
             let unarchived = try NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data)
+            log("Retrieved anchor from UserDefaults")
             return unarchived
         } catch {
             log("Failed to retrieve background anchor from UserDefults: \(error) ")
@@ -239,6 +247,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
     }
     
+    @MainActor
     private func _retrieve_upload_endpoint_properties() -> (upload_url: String, upload_token: String) {
         
         let upload_url = UserDefaults.standard.string(forKey: "upload_target_url") ?? "https://www.swimerize.com/integrations/apple/inbound/sync/activity"
@@ -247,6 +256,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         return (upload_url: upload_url, upload_token: upload_token)
     }
     
+    @MainActor
     private func _retrieve_upload_start_date() -> Date {
         return UserDefaults.standard.object(forKey: "upload_start_date") as? Date ?? Date()
     }
@@ -254,7 +264,6 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     /**
      * Assumes background anchor initialized.
      */
-//    @MainActor
     private func _start_background_workout_observer() {
         
         if is_observer_active {
@@ -309,31 +318,41 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                     bg_task_id = UIBackgroundTaskIdentifier.invalid
                 }
             }
-            
-            DispatchQueue.main.async {
+                           
+            var current_anchor: HKQueryAnchor?
+            var start_date: Date?
+            Task {
                 
-                let current_anchor = self._retrieve_background_anchor()
-                let start_date = self._retrieve_upload_start_date()
+                current_anchor = await MainActor.run {
+                    self._retrieve_background_anchor()
+                }
+                start_date = await MainActor.run {
+                    self._retrieve_upload_start_date()
+                }
                 
-                Task {
-                    self._internal_fetch_workouts(
-                        startDate: start_date,
-                        endDate: nil,
-                        anchor: current_anchor,
-                        caller_id: "_start_background_workout_observer"
-                    ) { [weak self] workouts, new_anchor in
+    //            let current_anchor = self._retrieve_background_anchor()
+    //            let start_date = self._retrieve_upload_start_date()
+
+                self._internal_fetch_workouts(
+                    startDate: start_date,
+                    endDate: nil,
+                    anchor: current_anchor,
+                    caller_id: "_start_background_workout_observer"
+                ) { [weak self] workouts, new_anchor in
+                    
+                    guard let self = self else {return}
+                    
+                    log("-----> Observer query -> Retrieved background workouts: \(workouts.count)")
+                    
+                    if workouts.count == 0 {
+                        log("No workouts to upload.")
+                        completionHandler()
+                        return
+                    }
+                    
+                    Task {@MainActor in
+                        var upload_properties = self._retrieve_upload_endpoint_properties()
                         
-                        guard let self = self else {return}
-                        
-                        log("-----> Observer query -> Retrieved background workouts: \(workouts.count)")
-                        
-                        if workouts.count == 0 {
-                            log("No workouts to upload.")
-                            completionHandler()
-                            return
-                        }
-                        
-                        let upload_properties = self._retrieve_upload_endpoint_properties()
                         let upload_url = upload_properties.upload_url
                         let upload_token = upload_properties.upload_token
                         
@@ -344,7 +363,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                         payload_json["workout_results"] = workouts
                         payload_json["upload_token"] = upload_token
                         
-                        let serializable_results = _prepare_for_serialization(in: payload_json)
+                        let serializable_results = self._prepare_for_serialization(in: payload_json)
                         guard let json_data = try? JSONSerialization.data(withJSONObject: serializable_results) else {
                             
                             log("Error serializing workout for POST")
@@ -372,7 +391,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                                 log("POST background call successfully submitted.")
                                 
                                 // successfully processed callback, so store updated anchor
-                                DispatchQueue.main.async {
+                                Task {@MainActor in
                                     self._store_background_anchor(new_anchor)
                                 }
                                 
@@ -502,12 +521,12 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         }
     }
     
-    private func _is_authorized() -> Bool {
+    @MainActor private func _is_authorized() -> Bool {
                 
         return _retrieve_background_anchor() != nil
     }
     
-    @objc func is_authorized(_ call: CAPPluginCall) {
+    @MainActor @objc func is_authorized(_ call: CAPPluginCall) {
      
         let authorized = self._is_authorized()
         

@@ -95,8 +95,8 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
          * maintained execution state is present to determine if
          * the user ever authorized AHK.
          */
-        let anchor_query = self._retrieve_background_anchor()
-        if anchor_query != nil {
+        let authorized = self._is_authorized()
+        if authorized {
             log("load() starting background observer")
             self._start_background_workout_observer()
         } else {
@@ -105,6 +105,25 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     }
 
     @MainActor
+    func _store_start_date(start_date: Date?) {
+        
+        if start_date == nil {
+            
+            UserDefaults.standard.removeObject(forKey: "upload_start_date")
+            log("Removed upload_start_date from UserDefaults")
+            return
+        }
+
+        UserDefaults.standard.set(start_date, forKey: "upload_start_date")
+        log("Stored start_date in UserDefaults: \(String(describing: start_date))")
+    }
+    
+    @MainActor
+    private func _retrieve_start_date() -> Date? {
+        return UserDefaults.standard.object(forKey: "upload_start_date") as? Date
+    }
+        
+    @MainActor
     func _update_upload_properties(upload_target_url: String, upload_token: String, upload_start_date: Date?) {
         
         log("Updating upload properties: \(upload_target_url), \(upload_token), \(String(describing: upload_start_date))")
@@ -112,8 +131,14 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         UserDefaults.standard.set(upload_target_url, forKey: "upload_target_url")
         UserDefaults.standard.set(upload_token, forKey: "upload_token")
         
+        /*
+         * Important to only update, never clear the start_date.
+         * This function is used for initial registration (start_date is provided)
+         * and for updating upload tokens (start_date is not provided).
+         */
         if let start_date = upload_start_date {
-            UserDefaults.standard.set(start_date, forKey: "upload_start_date")
+            
+            self._store_start_date(start_date: start_date)
             log("Stored start_date in UserDefaults: \(start_date)")
         }
     }
@@ -154,98 +179,61 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
 
         /*
          * When this is first ever initialized (eg. during authorization process)
-         * then we need to establish an anchor query starting from 'now'.
+         * then we need to establish a starting point (ie. start_date). This applies
+         * only to background sync callbacks for new workouts moving forward from the
+         * specified start_date.
          *
-         * Any workouts that exist prior to now will be manually sync'ed by
+         * Any workouts that exist prior to that start_date are to be manually sync'ed by
          * the app, which will give users the ability of controlling which
          * workouts to include/exclude.
          */
-        let existing_anchor = _retrieve_background_anchor()
-        log("initialize_background_observer is null? \(existing_anchor == nil)")
-        
-        // Commented out @MainActor -> Task { @MainActor in
-        Task {
-            
-            if (existing_anchor == nil) {
-                
-                log("initialize_background_observer initializing anchor with start_date: \(start_date)")
-                await self._initialize_background_anchor(start_timestamp: start_date)
-                
-                let stored_anchor = self._retrieve_background_anchor()
-                if stored_anchor == nil {
-                    call.resolve(["authorized": false])
-                    return;
-                }
-            }
-        }
+        log("initialize_background_observer initializing start_date: \(start_date)")
+        self._store_start_date(start_date: start_date)
 
         _start_background_workout_observer() // initalizes anchor query and observer
                     
         call.resolve(["authorized": true])
     }
     
-    @MainActor
-    private func _initialize_background_anchor(start_timestamp: Date) async {
-        
-        log("_initialize_background_anchor called \(start_timestamp)")
-        return await withCheckedContinuation { continuation in
-            
-            self._internal_fetch_workouts(
-                startDate: start_timestamp,
-                endDate: nil,
-                anchor: nil,
-                caller_id: "_initialize_background_anchor"
-            ) { [weak self] workouts, new_anchor in
-                
-                guard let self = self else {return}
-                
-                log("-----> _initialize_background_anchor finally initializing anchor: \(workouts.count)")
-                self._store_background_anchor(new_anchor)
-                
-                continuation.resume()
-            }
-        }
-    }
+//    @MainActor
+//    private func _store_background_anchor(_ anchor: HKQueryAnchor?) {
+//        
+//        if anchor == nil {
+//            
+//            UserDefaults.standard.removeObject(forKey: "backgroundAnchorKey")
+//            log("Removed anchor from UserDefaults")
+//            return
+//        }
+//        
+//        do {
+//            
+//            let data = try NSKeyedArchiver.archivedData(withRootObject: anchor!, requiringSecureCoding: true)
+//            UserDefaults.standard.set(data, forKey: "backgroundAnchorKey")
+//            
+//            log("-------> Stored anchor query! -> \(data.base64EncodedString())")
+//        } catch {
+//            log("Failed to store background anchor in UserDefaults: \(error)")
+//        }
+//    }
 
-    @MainActor
-    private func _store_background_anchor(_ anchor: HKQueryAnchor?) {
-        
-        if anchor == nil {
-            
-            UserDefaults.standard.removeObject(forKey: "backgroundAnchorKey")
-            log("Removed anchor from UserDefaults")
-            return
-        }
-        
-        do {
-            
-            let data = try NSKeyedArchiver.archivedData(withRootObject: anchor!, requiringSecureCoding: true)
-            UserDefaults.standard.set(data, forKey: "backgroundAnchorKey")
-            
-            log("-------> Stored anchor query!")
-        } catch {
-            log("Failed to store background anchor in UserDefaults: \(error)")
-        }
-    }
-    
-    @MainActor
-    private func _retrieve_background_anchor() -> HKQueryAnchor? {
-        
-        guard let data = UserDefaults.standard.data(forKey: "backgroundAnchorKey") else {
-            log("XXX -> Retrieved nil for background anchor!")
-            return nil
-        }
-
-        do {
-            
-            let unarchived = try NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data)
-            log("Retrieved anchor from UserDefaults")
-            return unarchived
-        } catch {
-            log("Failed to retrieve background anchor from UserDefults: \(error) ")
-            return nil
-        }
-    }
+//    @MainActor
+//    private func _retrieve_background_anchor() -> HKQueryAnchor? {
+//        
+//        guard let data = UserDefaults.standard.data(forKey: "backgroundAnchorKey") else {
+//            log("XXX -> Retrieved nil for background anchor!")
+//            return nil
+//        }
+//
+//        do {
+//            
+//            let unarchived = try NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data)
+//            log("Retrieved anchor from UserDefaults -> \(data.base64EncodedString())")
+//            return unarchived
+//        } catch {
+//            log("Failed to retrieve background anchor from UserDefults: \(error) ")
+//            return nil
+//        }
+//    }
     
     @MainActor
     private func _retrieve_upload_endpoint_properties() -> (upload_url: String, upload_token: String) {
@@ -256,11 +244,6 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         return (upload_url: upload_url, upload_token: upload_token)
     }
     
-    @MainActor
-    private func _retrieve_upload_start_date() -> Date {
-        return UserDefaults.standard.object(forKey: "upload_start_date") as? Date ?? Date()
-    }
-        
     /**
      * Assumes background anchor initialized.
      */
@@ -319,30 +302,33 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                 }
             }
                            
-            var current_anchor: HKQueryAnchor?
+//            var current_anchor: HKQueryAnchor?
             var start_date: Date?
             Task {
                 
-                current_anchor = await MainActor.run {
-                    self._retrieve_background_anchor()
-                }
                 start_date = await MainActor.run {
-                    self._retrieve_upload_start_date()
+                    self._retrieve_start_date()
                 }
                 
-    //            let current_anchor = self._retrieve_background_anchor()
-    //            let start_date = self._retrieve_upload_start_date()
-
+                if start_date == nil {
+                    
+                    log("Error: Start date is nil! Background observer requires a start date!")
+                    completionHandler()
+                    return
+                }
+                
+                log("Start date to query workouts: \(String(describing: start_date))")
+                
                 self._internal_fetch_workouts(
                     startDate: start_date,
                     endDate: nil,
-                    anchor: current_anchor,
+                    anchor: nil, // used to be 'current_anchor' when we were passing an anchor around,
                     caller_id: "_start_background_workout_observer"
-                ) { [weak self] workouts, new_anchor in
+                ) { [weak self] workouts, latest_start_date in
                     
                     guard let self = self else {return}
                     
-                    log("-----> Observer query -> Retrieved background workouts: \(workouts.count)")
+                    log("-----> Observer query -> Retrieved background workouts: \(workouts.count) with latest_start_date: \(String(describing: latest_start_date))")
                     
                     if workouts.count == 0 {
                         log("No workouts to upload.")
@@ -350,9 +336,13 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                         return
                     }
                     
+                    let start_date_to_persist = latest_start_date
                     Task {@MainActor in
-                        var upload_properties = self._retrieve_upload_endpoint_properties()
                         
+                        log("Within first Task boundary: \(String(describing: start_date_to_persist))")
+                        let upload_properties = self._retrieve_upload_endpoint_properties()
+                        log("Still right date (1): \(String(describing: start_date_to_persist))")
+
                         let upload_url = upload_properties.upload_url
                         let upload_token = upload_properties.upload_token
                         
@@ -363,6 +353,8 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                         payload_json["workout_results"] = workouts
                         payload_json["upload_token"] = upload_token
                         
+                        log("Still right date (2): \(String(describing: start_date_to_persist))")
+
                         let serializable_results = self._prepare_for_serialization(in: payload_json)
                         guard let json_data = try? JSONSerialization.data(withJSONObject: serializable_results) else {
                             
@@ -370,7 +362,8 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                             completionHandler()
                             return
                         }
-                        
+                        log("Still right date (3): \(String(describing: start_date_to_persist))")
+
                         let tmp_dir = FileManager.default.temporaryDirectory
                         let tmp_file_url = tmp_dir.appendingPathComponent("tmp_workout_payload.json")
                         do {
@@ -380,19 +373,32 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                             completionHandler()
                             return
                         }
-                        
+                        log("Still right date (4): \(String(describing: start_date_to_persist))")
+
                         log("-----> Posting to \(upload_url) w/ token \(upload_token)")
                         
                         // submit workout contents
+                        log("Still right date (5): \(String(describing: start_date_to_persist))")
+                        let inner_start_date_to_persist = start_date_to_persist
+                        log("##### -> Assigned inner^2 date: \(String(describing: inner_start_date_to_persist)) from \(String(describing: start_date_to_persist))")
+                        
+                        // clear-out global state before execution (can't do it within _post_workout due to deallocation race conditions
+                        upload_workout_delegate = nil
+                        url_session = nil
+
                         self._post_workout(tmp_payload_file_url: tmp_file_url, upload_url: upload_url, upload_token: upload_token) { success in
                             
                             if success {
                                 
                                 log("POST background call successfully submitted.")
                                 
-                                // successfully processed callback, so store updated anchor
+                                // successfully processed callback, so store updated start date
+                                log("About to persist latest start date: \(String(describing: inner_start_date_to_persist))")
+                                
+                                let final_inner_start_date_to_persist = inner_start_date_to_persist
                                 Task {@MainActor in
-                                    self._store_background_anchor(new_anchor)
+                                    log("Inside Task - about to persist latest start_date: \(String(describing: final_inner_start_date_to_persist))")
+                                    self._store_start_date(start_date: final_inner_start_date_to_persist)
                                 }
                                 
                             } else {
@@ -458,8 +464,15 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         upload_delegate.completion = {success in
                 
             log("_post_workout continuation called with success: \(success)")
-            upload_workout_delegate = nil
-            url_session = nil
+            
+            /*
+             * NOTE: As much as I would like to clear out the previously-stored
+             *       upload_delegate and completion here, the runtime environment
+             *       deallocates the completion before it has a chance to run.
+             *       Therefore, it is the responsibility of the caller to clear state
+             *       before execution.
+             */
+            
             completion(success)
         }
         upload_workout_delegate = upload_delegate
@@ -523,7 +536,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     
     @MainActor private func _is_authorized() -> Bool {
                 
-        return _retrieve_background_anchor() != nil
+        return self._retrieve_start_date() != nil
     }
     
     @MainActor @objc func is_authorized(_ call: CAPPluginCall) {
@@ -575,19 +588,42 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         return;
     }
     
+//    private func is_anchor_equal(anchor: HKQueryAnchor?, new_anchor: HKQueryAnchor?) -> Bool {
+//        
+//        if let unwrapped_anchor = anchor, let unwrapped_new_anchor = new_anchor {
+//            
+//            if unwrapped_anchor.isEqual(unwrapped_new_anchor) {
+//                log("Anchors are EQUAL: \(String(describing: anchor)) & \(String(describing: new_anchor))")
+//                return true
+//            } else {
+//                log("Anchors are NOT EQUAL: \(String(describing: anchor)) & \(String(describing: new_anchor))")
+//                return false
+//            }
+//            
+//        } else if anchor == nil && new_anchor == nil {
+//            
+//            log("Anchors are both nil!")
+//            return true;
+//        } else {
+//            
+//            log("One of the anchors is nil! \(String(describing: anchor)) \(String(describing: new_anchor))")
+//            return false
+//        }
+//    }
+    
     private func _internal_fetch_workouts(
         startDate: Date?,
         endDate: Date?,
         anchor: HKQueryAnchor?,
         caller_id: String,
-        completion: @escaping([JSObject], HKQueryAnchor?) -> Void
+        completion: @escaping([JSObject], Date?) -> Void
     ) {
     
-        log("----> \(caller_id) Internal fetch workouts... \(String(describing: startDate)) \(String(describing: endDate)) \(anchor == nil)");
+        log("----> \(caller_id) => _internal_fetch_workouts... start: \(String(describing: startDate)), end: \(String(describing: endDate))");
         
         var effective_start_date = startDate
         if startDate == nil && endDate == nil && anchor == nil {
-            log("_internal_fetch_workouts -> defaulting to effective_start_date to now...")
+            log("WARNING: _internal_fetch_workouts -> defaulting to effective_start_date to now...")
             effective_start_date = Date()
         }
         
@@ -608,28 +644,47 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             predicate: predicate,
             anchor: anchor,
             limit: HKObjectQueryNoLimit
-        ) { [weak self] query, newSamples, deletedSamples, new_anchor, error in
+        ) { [weak self] query, new_samples, deleted_samples, new_anchor, error in
             
-            guard let self = self else { return }
-            
-            if let error = error {
-                log("\(caller_id) Error fetching workouts: \(error.localizedDescription)")
-                completion([], anchor)
+            guard let self = self else {
+                log("_internal_fetch_workouts 'self' is nil!... returning!")
                 return
             }
             
-            guard let workouts = newSamples as? [HKWorkout], !workouts.isEmpty else {
+            if let error = error {
+                log("\(caller_id) Error fetching workouts: \(error.localizedDescription)")
+                completion([], nil)
+                return
+            }
+            
+//            let anchors_equal = is_anchor_equal(anchor: anchor, new_anchor: new_anchor)
+//            if (anchors_equal) {
+//                log("New anchor is equal to old one - returning no results")
+//                completion([], nil)
+//            } else {
+//                log("New anchor is different than old one: \(String(describing: anchor)) vs \(String(describing: new_anchor))")
+//            }
+            
+            guard let workouts = new_samples as? [HKWorkout], !workouts.isEmpty else {
                 
                 log("\(caller_id) _internal_fetch_workouts: No workouts found")
-                completion([], new_anchor)
+                completion([], nil)
                 return
             }
 
             Task {
                 
                 let results = await self.generate_sample_output(results: workouts) ?? []
-                log("\(caller_id) _internal_fetch_workouts: \(results.count) workouts found")
-                completion(results, new_anchor)
+                
+                // obtain the latest start date
+                // let latest_start_date = workouts.last?.startDate
+                let latest_start_date = workouts.max {$0.endDate < $1.endDate }?.endDate
+                let first_end_date = workouts.first?.endDate
+                let latest_end_date = workouts.last?.endDate
+                log("======> first and last sanity check: \(String(describing: first_end_date)) and \(String(describing: latest_end_date))")
+                
+                log("\(caller_id) _internal_fetch_workouts: \(results.count) workouts found => latest_start_date: \(String(describing: latest_start_date))")
+                completion(results, latest_start_date)
             }
         }
         
@@ -685,7 +740,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                     continue
                 }
             }
-
+            
             var workout_obj = JSObject()
             workout_obj["uuid"] = sample.uuid.uuidString
             workout_obj["start_date"] = sample.startDate

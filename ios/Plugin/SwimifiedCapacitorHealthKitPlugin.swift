@@ -11,60 +11,58 @@ func log(_ message: String) {
 
 //URLSessionDelegate, URLSessionTaskDelegate {
     
-class UploadWorkoutDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
-    
-    var completion: ((Bool) -> Void)?
-//    private var has_completed = false
-        
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-
-        log("Session Delegate ----> completed callback!")
-//        guard !has_completed else {
-//            log("Preventing double-completion")
+//class UploadWorkoutDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
+//    
+//    var completion: ((Bool) -> Void)?
+////    private var has_completed = false
+//        
+//    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+//
+//        log("Session Delegate ----> completed callback!")
+////        guard !has_completed else {
+////            log("Preventing double-completion")
+////            return
+////        }
+////        has_completed = true
+//        
+//        guard let local_completion = self.completion else {
+//            log("Nil completion! - returning")
 //            return
 //        }
-//        has_completed = true
-        
-        guard let local_completion = self.completion else {
-            log("Nil completion! - returning")
-            return
-        }
-//        self.completion = nil
-        
-        if let error = error {
-            log("Background POST task error: \(error)")
-            local_completion(false)
-            return
-        }
-        
-        if let httpResponse = task.response as? HTTPURLResponse {
-            
-            switch httpResponse.statusCode {
-            case 200...299:
-                log("Successful POST.")
-                local_completion(true)
-            default:
-                log("Non-success POST: \(httpResponse.statusCode)")
-                local_completion(false)
-            }
-        } else {
-            
-            log("No valid HTTP response received.")
-            local_completion(false)
-        }
-    }
-        
-    public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-
-        log("URL Delegate ----> background session finished!")
-    }
-
-}
+////        self.completion = nil
+//        
+//        if let error = error {
+//            log("Background POST task error: \(error)")
+//            local_completion(false)
+//            return
+//        }
+//        
+//        if let httpResponse = task.response as? HTTPURLResponse {
+//            
+//            switch httpResponse.statusCode {
+//            case 200...299:
+//                log("Successful POST.")
+//                local_completion(true)
+//            default:
+//                log("Non-success POST: \(httpResponse.statusCode)")
+//                local_completion(false)
+//            }
+//        } else {
+//            
+//            log("No valid HTTP response received.")
+//            local_completion(false)
+//        }
+//    }
+//        
+//    public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+//
+//        log("URL Delegate ----> background session finished!")
+//    }
+//
+//}
 
 var healthStore = HKHealthStore()
 var is_observer_active = false
-var upload_workout_delegate: UploadWorkoutDelegate?
-var url_session: URLSession?
 
 /**
  * Please read the Capacitor iOS Plugin Development Guide
@@ -244,6 +242,59 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         return (upload_url: upload_url, upload_token: upload_token)
     }
     
+    @MainActor
+    private func _process_latest_changes() async -> Bool {
+        
+        //            var current_anchor: HKQueryAnchor?
+        let start_date: Date? = self._retrieve_start_date()
+        if start_date == nil {
+            
+            log("Error: Start date is nil! Background observer requires a start date!")
+            return false
+        }
+        
+        log("Start date to query workouts: \(String(describing: start_date))")
+
+        let (workouts, latest_start_date) = await self._internal_fetch_workouts(
+            startDate: start_date,
+            endDate: nil,
+            anchor: nil, // used to be 'current_anchor' when we were passing an anchor around,
+            caller_id: "_start_background_workout_observer"
+        )
+            
+        log("-----> Observer query -> Retrieved background workouts: \(workouts.count) with latest_start_date: \(String(describing: latest_start_date))")
+        
+        if workouts.count == 0 {
+            log("No workouts to upload.")
+            return true
+        }
+
+        let upload_properties = self._retrieve_upload_endpoint_properties()
+                
+        let upload_url = upload_properties.upload_url
+        let upload_token = upload_properties.upload_token
+                
+        log("-----> Posting to \(upload_url) w/ token \(upload_token)")
+                                
+        let post_success = await self._post_workout(workouts, upload_url: upload_url, upload_token: upload_token)
+        
+        if post_success {
+            
+            log("POST background call successfully submitted.")
+            
+            // successfully processed callback, so store updated start date
+            log("About to persist latest start date: \(String(describing: latest_start_date))")
+            
+            self._store_start_date(start_date: latest_start_date)
+            
+        } else {
+            
+            log("Failed to POST background workout data.")
+        }
+        
+        return post_success
+    }
+    
     /**
      * Assumes background anchor initialized.
      */
@@ -301,124 +352,13 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                     bg_task_id = UIBackgroundTaskIdentifier.invalid
                 }
             }
-                           
-//            var current_anchor: HKQueryAnchor?
-            var start_date: Date?
+
             Task {
                 
-                start_date = await MainActor.run {
-                    self._retrieve_start_date()
-                }
+                let success = await self._process_latest_changes()
                 
-                if start_date == nil {
-                    
-                    log("Error: Start date is nil! Background observer requires a start date!")
-                    completionHandler()
-                    return
-                }
-                
-                log("Start date to query workouts: \(String(describing: start_date))")
-                
-                self._internal_fetch_workouts(
-                    startDate: start_date,
-                    endDate: nil,
-                    anchor: nil, // used to be 'current_anchor' when we were passing an anchor around,
-                    caller_id: "_start_background_workout_observer"
-                ) { [weak self] workouts, latest_start_date in
-                    
-                    guard let self = self else {return}
-                    
-                    log("-----> Observer query -> Retrieved background workouts: \(workouts.count) with latest_start_date: \(String(describing: latest_start_date))")
-                    
-                    if workouts.count == 0 {
-                        log("No workouts to upload.")
-                        completionHandler()
-                        return
-                    }
-                    
-                    let start_date_to_persist = latest_start_date
-                    Task {@MainActor in
-                        
-                        log("Within first Task boundary: \(String(describing: start_date_to_persist))")
-                        let upload_properties = self._retrieve_upload_endpoint_properties()
-                        log("Still right date (1): \(String(describing: start_date_to_persist))")
-
-                        let upload_url = upload_properties.upload_url
-                        let upload_token = upload_properties.upload_token
-                        
-                        /*
-                         * Serialize JSON to a file
-                         */
-                        var payload_json = JSObject()
-                        payload_json["workout_results"] = workouts
-                        payload_json["upload_token"] = upload_token
-                        
-                        log("Still right date (2): \(String(describing: start_date_to_persist))")
-
-                        let serializable_results = self._prepare_for_serialization(in: payload_json)
-                        guard let json_data = try? JSONSerialization.data(withJSONObject: serializable_results) else {
-                            
-                            log("Error serializing workout for POST")
-                            completionHandler()
-                            return
-                        }
-                        log("Still right date (3): \(String(describing: start_date_to_persist))")
-
-                        let tmp_dir = FileManager.default.temporaryDirectory
-                        let tmp_file_url = tmp_dir.appendingPathComponent("tmp_workout_payload.json")
-                        do {
-                            try json_data.write(to: tmp_file_url)
-                        } catch {
-                            log("Unable to write tmp file: \(error)")
-                            completionHandler()
-                            return
-                        }
-                        log("Still right date (4): \(String(describing: start_date_to_persist))")
-
-                        log("-----> Posting to \(upload_url) w/ token \(upload_token)")
-                        
-                        // submit workout contents
-                        log("Still right date (5): \(String(describing: start_date_to_persist))")
-                        let inner_start_date_to_persist = start_date_to_persist
-                        log("##### -> Assigned inner^2 date: \(String(describing: inner_start_date_to_persist)) from \(String(describing: start_date_to_persist))")
-                        
-                        // clear-out global state before execution (can't do it within _post_workout due to deallocation race conditions
-                        upload_workout_delegate = nil
-                        url_session = nil
-
-                        self._post_workout(tmp_payload_file_url: tmp_file_url, upload_url: upload_url, upload_token: upload_token) { success in
-                            
-                            if success {
-                                
-                                log("POST background call successfully submitted.")
-                                
-                                // successfully processed callback, so store updated start date
-                                log("About to persist latest start date: \(String(describing: inner_start_date_to_persist))")
-                                
-                                let final_inner_start_date_to_persist = inner_start_date_to_persist
-                                Task {@MainActor in
-                                    log("Inside Task - about to persist latest start_date: \(String(describing: final_inner_start_date_to_persist))")
-                                    self._store_start_date(start_date: final_inner_start_date_to_persist)
-                                }
-                                
-                            } else {
-                                
-                                log("Failed to POST background workout data.")
-                            }
-                            
-                            // clear file
-                            do {
-                                try FileManager.default.removeItem(at: tmp_file_url)
-                                log("TMP payload file removed!")
-                            } catch {
-                                log("Unable to remove tmp file: \(error)")
-                            }
-                            
-                            // finalize callback
-                            completionHandler()
-                        }
-                    }
-                }
+                log("Completed processing latest changes: Success? \(success)")
+                completionHandler()
             }
         }
         
@@ -452,51 +392,82 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     }
 
 //    @MainActor
-    private func _post_workout(tmp_payload_file_url: URL, upload_url: String, upload_token: String, completion: @escaping (Bool) -> Void) {
+    private func _post_workout(_ workouts: [JSObject], upload_url: String, upload_token: String) async -> Bool {
         
         log("--------> Posting workout")
                         
-        let config = URLSessionConfiguration.background(withIdentifier: "com.swimerize.bg_workout_sync_session")
-        config.isDiscretionary = false
-        config.sessionSendsLaunchEvents = true
         
-        let upload_delegate = UploadWorkoutDelegate()
-        upload_delegate.completion = {success in
-                
-            log("_post_workout continuation called with success: \(success)")
-            
-            /*
-             * NOTE: As much as I would like to clear out the previously-stored
-             *       upload_delegate and completion here, the runtime environment
-             *       deallocates the completion before it has a chance to run.
-             *       Therefore, it is the responsibility of the caller to clear state
-             *       before execution.
-             */
-            
-            completion(success)
-        }
-        upload_workout_delegate = upload_delegate
+//        let upload_delegate = UploadWorkoutDelegate()
+//        upload_delegate.completion = {success in
+//                
+//            log("_post_workout continuation called with success: \(success)")
+//            
+//            /*
+//             * NOTE: As much as I would like to clear out the previously-stored
+//             *       upload_delegate and completion here, the runtime environment
+//             *       deallocates the completion before it has a chance to run.
+//             *       Therefore, it is the responsibility of the caller to clear state
+//             *       before execution.
+//             */
+//            
+//            completion(success)
+//        }
+//        upload_workout_delegate = upload_delegate
         
-        url_session = URLSession(configuration: config, delegate: upload_workout_delegate!, delegateQueue: nil)
-        
+//        url_session = URLSession(configuration: config, delegate: upload_workout_delegate!, delegateQueue: nil)
+
         guard let url = URL(string: upload_url) else {
             log("Unable to determine POST url endpoint: \(upload_url)")
-            completion(false)
-            return
+            return false
         }
                 
+        /*
+         * Serialize JSON
+         */
+        var payload_json = JSObject()
+        payload_json["workout_results"] = workouts
+        payload_json["upload_token"] = upload_token
+                
+        let serializable_results = self._prepare_for_serialization(in: payload_json)
+        guard let json_data = try? JSONSerialization.data(withJSONObject: serializable_results) else {
+            
+            log("Error serializing workout for POST")
+            return false
+        }
+        
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = json_data
 
         log("Calling url_session...")
-        let task = url_session!.uploadTask(with: request, fromFile: tmp_payload_file_url)
-        task.resume()
-        
-//        // prevents it from being dealocated
-//        let _ = { [upload_workout_delegate] in
-//            log("_post_workout delegate retained... \(upload_workout_delegate.hashValue)")
-//        }
+        do {
+
+//            let config = URLSessionConfiguration.background(withIdentifier: "com.swimerize.bg_workout_sync_session")
+//            config.isDiscretionary = false
+//            config.sessionSendsLaunchEvents = true
+//            
+//            let url_session = URLSession(configuration: config)
+            let (_, response) = try await URLSession.shared.data(for: request)
+            
+            guard let status_code = (response as? HTTPURLResponse)?.statusCode else {
+                
+                log("Received unknown http_status code. Aborting workout post!")
+                return false
+            }
+            
+            guard (200...299).contains(status_code) else {
+                
+                log("Received non-OK http_status code: \(status_code)")
+                return false
+            }
+            
+        } catch {
+            log("Error submitting POST request: \(error)")
+            return false
+        }
+
+        return true
     }
     
     private func _reorder_dates(start: Date, end: Date) -> (start: Date, end: Date) {
@@ -611,13 +582,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
 //        }
 //    }
     
-    private func _internal_fetch_workouts(
-        startDate: Date?,
-        endDate: Date?,
-        anchor: HKQueryAnchor?,
-        caller_id: String,
-        completion: @escaping([JSObject], Date?) -> Void
-    ) {
+    private func _internal_fetch_workouts(startDate: Date?, endDate: Date?, anchor: HKQueryAnchor?, caller_id: String) async -> ([JSObject], Date?) {
     
         log("----> \(caller_id) => _internal_fetch_workouts... start: \(String(describing: startDate)), end: \(String(describing: endDate))");
         
@@ -626,71 +591,46 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             log("WARNING: _internal_fetch_workouts -> defaulting to effective_start_date to now...")
             effective_start_date = Date()
         }
-        
-        let workoutType = HKObjectType.workoutType()
-                
-        var predicate: NSPredicate?
-        log("Initializing predicate for _internal_fetch_workouts...")
-        if let start = effective_start_date, let end = endDate {
-            predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
-        } else if let start = effective_start_date {
-            predicate = HKQuery.predicateForSamples(withStart: start, end: nil, options: .strictStartDate)
-        } else if let end = endDate {
-            predicate = HKQuery.predicateForSamples(withStart: nil, end: end, options: .strictEndDate)
+                        
+        guard #available(iOS 15.4, *) else {
+            return ([], nil)
         }
-        
-        let query = HKAnchoredObjectQuery(
-            type: workoutType,
-            predicate: predicate,
-            anchor: anchor,
-            limit: HKObjectQueryNoLimit
-        ) { [weak self] query, new_samples, deleted_samples, new_anchor, error in
-            
-            guard let self = self else {
-                log("_internal_fetch_workouts 'self' is nil!... returning!")
-                return
-            }
-            
-            if let error = error {
-                log("\(caller_id) Error fetching workouts: \(error.localizedDescription)")
-                completion([], nil)
-                return
-            }
-            
-//            let anchors_equal = is_anchor_equal(anchor: anchor, new_anchor: new_anchor)
-//            if (anchors_equal) {
-//                log("New anchor is equal to old one - returning no results")
-//                completion([], nil)
-//            } else {
-//                log("New anchor is different than old one: \(String(describing: anchor)) vs \(String(describing: new_anchor))")
-//            }
-            
-            guard let workouts = new_samples as? [HKWorkout], !workouts.isEmpty else {
-                
-                log("\(caller_id) _internal_fetch_workouts: No workouts found")
-                completion([], nil)
-                return
-            }
 
-            Task {
-                
-                let results = await self.generate_sample_output(results: workouts) ?? []
-                
-                // obtain the latest start date
-                // let latest_start_date = workouts.last?.startDate
-                let latest_start_date = workouts.max {$0.endDate < $1.endDate }?.endDate
-                let first_end_date = workouts.first?.endDate
-                let latest_end_date = workouts.last?.endDate
-                log("======> first and last sanity check: \(String(describing: first_end_date)) and \(String(describing: latest_end_date))")
-                
-                log("\(caller_id) _internal_fetch_workouts: \(results.count) workouts found => latest_start_date: \(String(describing: latest_start_date))")
-                completion(results, latest_start_date)
-            }
+        log("Initializing predicate for _internal_fetch_workouts...")
+            
+        let date_predicate = HKQuery.predicateForSamples(withStart: effective_start_date, end: endDate, options: .strictStartDate)
+            
+        let query = HKAnchoredObjectQueryDescriptor(predicates: [.workout(date_predicate)], anchor: nil, limit: HKObjectQueryNoLimit)
+
+        var query_results: HKAnchoredObjectQueryDescriptor<HKWorkout>.Result
+        do {
+            query_results = try await query.result(for: healthStore)
+        } catch {
+            
+            log("Unable to query healthStore for workouts: \(error.localizedDescription)")
+            return ([], nil)
         }
+            
+        let workouts = query_results.addedSamples as [HKWorkout]
+        if workouts.isEmpty {
+            
+            log("\(caller_id) _internal_fetch_workouts: No workouts found")
+            return ([], nil)
+        }
+            
+        let results = await self.generate_sample_output(results: workouts) ?? []
         
-        healthStore.execute(query)
+        // obtain the latest start date
+        // let latest_start_date = workouts.last?.startDate
+        let latest_start_date = workouts.max {$0.endDate < $1.endDate }?.endDate
+        let first_end_date = workouts.first?.endDate
+        let latest_end_date = workouts.last?.endDate
+        log("======> first and last sanity check: \(String(describing: first_end_date)) and \(String(describing: latest_end_date))")
+        
+        log("\(caller_id) _internal_fetch_workouts: \(results.count) workouts found => latest_start_date: \(String(describing: latest_start_date))")
+            
+        return (results, latest_start_date)
     }
-    
     
     @objc func fetch_workouts(_ call: CAPPluginCall) {
         
@@ -705,8 +645,10 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         startDate = reordered_dates.start
         endDate = reordered_dates.end
 
-        _internal_fetch_workouts(startDate: startDate, endDate: endDate, anchor: nil, caller_id: "fetch_workouts") { (workout_results, _) in
-        
+        Task {
+            
+            let (workout_results, _) = await _internal_fetch_workouts(startDate: startDate, endDate: endDate, anchor: nil, caller_id: "fetch_workouts")
+            
             call.resolve([
                 "count": workout_results.count,
                 "results": workout_results

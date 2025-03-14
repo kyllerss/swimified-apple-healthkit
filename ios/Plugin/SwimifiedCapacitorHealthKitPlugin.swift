@@ -63,31 +63,105 @@ func log(_ message: String) {
 
 var healthStore = HKHealthStore()
 var is_observer_active = false
-public var post_workout_completion: (() -> Void)?
+//public var post_workout_completion: (() -> Void)?
 
-/**
- * Please read the Capacitor iOS Plugin Development Guide
- * here: https://capacitorjs.com/docs/plugins/ios
- */
-@objc(SwimifiedCapacitorHealthKitPlugin)
-public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin, URLSessionDelegate, URLSessionTaskDelegate {
+public class BackgroundUploaderDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
+    
+    public static let shared = BackgroundUploaderDelegate()
+    
+    public var url_session: URLSession!
+    public var background_upload_completion: (() -> Void)?
+
+    override init() {
+
+        super.init()
         
-    private lazy var url_session: URLSession = {
-        
+        log("BackgroundUploadDelegate constructor called!")
+                
+        /*
+         * Always make sure that the url session delegate is available
+         */
         let config = URLSessionConfiguration.background(withIdentifier: "com.swimified.workout_upload")
         config.isDiscretionary = false
         config.sessionSendsLaunchEvents = true
         
         log("URL Session being constructed with delegate: \(type(of: self))")
         
-        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
-    }()
+        self.url_session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
+    }
+    
+    public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        
+        log("urlSessionDidFinishEvents! \(String(describing: session.configuration.identifier)) \(self.background_upload_completion == nil)")
+
+        // signal to iOS that processing complete
+        self.background_upload_completion?()
+        self.background_upload_completion = nil
+    }
+    
+    public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    
+        log("urlSession didCompleteWithError called \(error == nil)")
+        if let error = error {
+            
+            log("Error completing upload: \(error)")
+            return
+        }
+        
+        DispatchQueue.main.async {
+            
+            do {
+
+                let (tmp_upload_file, lastest_start_date) = SwimifiedCapacitorHealthKitPlugin._retrieve_pending_upload_state()
+
+                log("Retrieved pending upload state: \(String(describing: tmp_upload_file)), \(String(describing: lastest_start_date))")
+                
+                // cleanup tmp file
+                if let tmp_file = tmp_upload_file {
+                    
+                    try FileManager.default.removeItem(at: tmp_file)
+                }
+                
+                // record successful completion (update latest sync start date)
+                if let start_date = lastest_start_date {
+                    
+                    log("Persisting latest start date: \(start_date)")
+                    SwimifiedCapacitorHealthKitPlugin._store_start_date(start_date: start_date)
+                    
+                } else {
+                    
+                    log("WARNING! Lastest start date from UserDefaults not present.")
+                }
+                
+                log("post_workout_completion is nil? \(self.background_upload_completion == nil)")
+                                
+            } catch {
+                
+                log("post_workout_completion is nil (catch handler)? \(self.background_upload_completion == nil)")
+            }
+        }
+    }
+    
+    public func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        
+        log("didSendBodyData \(bytesSent)")
+    }
+    
+
+}
+
+/**
+ * Please read the Capacitor iOS Plugin Development Guide
+ * here: https://capacitorjs.com/docs/plugins/ios
+ */
+@objc(SwimifiedCapacitorHealthKitPlugin)
+public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     
     enum HKSampleError: Error {
         
         case workoutRouteRequestFailed
     }
-    
+            
     @MainActor
     public override func load() {
         
@@ -120,7 +194,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin, URLSessionDelegate, U
     }
 
     @MainActor
-    func _store_start_date(start_date: Date?) {
+    public static func _store_start_date(start_date: Date?) {
         
         if start_date == nil {
             
@@ -153,7 +227,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin, URLSessionDelegate, U
          */
         if let start_date = upload_start_date {
             
-            self._store_start_date(start_date: start_date)
+            SwimifiedCapacitorHealthKitPlugin._store_start_date(start_date: start_date)
             log("Stored start_date in UserDefaults: \(start_date)")
         }
     }
@@ -204,7 +278,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin, URLSessionDelegate, U
          * workouts to include/exclude.
          */
         log("initialize_background_observer initializing start_date: \(start_date)")
-        self._store_start_date(start_date: start_date)
+        SwimifiedCapacitorHealthKitPlugin._store_start_date(start_date: start_date)
 
         _start_background_workout_observer() // initalizes anchor query and observer
                     
@@ -378,7 +452,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin, URLSessionDelegate, U
         UserDefaults.standard.set(latest_start_date, forKey: "latest_start_date")
     }
     
-    private func _retrieve_pending_upload_state() -> (URL?, Date?) {
+    public static func _retrieve_pending_upload_state() -> (URL?, Date?) {
         
         let tmp_upload_file = UserDefaults.standard.object(forKey: "tmp_upload_file_url") as? URL
         let latest_start_date = UserDefaults.standard.object(forKey: "latest_start_date") as? Date
@@ -452,7 +526,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin, URLSessionDelegate, U
              
         self._store_pending_upload_state(tmp_upload_file: tmp_file_url, latest_start_date: latest_sync_start_date)
 
-        let upload_task = url_session.uploadTask(with: request, fromFile: tmp_file_url)
+        let upload_task = BackgroundUploaderDelegate.shared.url_session.uploadTask(with: request, fromFile: tmp_file_url)
         upload_task.resume()
 
         //            let (_, response) = try await URLSession.shared.data(for: request)
@@ -1167,67 +1241,6 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin, URLSessionDelegate, U
         
         return to_return
     }
-
-    /*
-     * Methods for _post_workout upload delegate
-     */
-    public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-        
-        log("urlSessionDidFinishEvents! \(String(describing: session.configuration.identifier)) \(post_workout_completion == nil)")
-
-        // signal to iOS that processing complete
-        post_workout_completion?()
-        post_workout_completion = nil
-    }
-    
-    public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-    
-        log("urlSession didCompleteWithError called \(error == nil)")
-        if let error = error {
-            
-            log("Error completing upload: \(error)")
-            return
-        }
-        
-        DispatchQueue.main.async {
-            
-            do {
-                
-                let (tmp_upload_file, lastest_start_date) = self._retrieve_pending_upload_state()
-                
-                log("Retrieved pending upload state: \(String(describing: tmp_upload_file)), \(String(describing: lastest_start_date))")
-                
-                // cleanup tmp file
-                if let tmp_file = tmp_upload_file {
-                    
-                    try FileManager.default.removeItem(at: tmp_file)
-                }
-                
-                // record successful completion (update latest sync start date)
-                if let start_date = lastest_start_date {
-                    
-                    log("Persisting latest start date: \(start_date)")
-                    self._store_start_date(start_date: start_date)
-                    
-                } else {
-                    
-                    log("WARNING! Lastest start date from UserDefaults not present.")
-                }
-                
-                log("post_workout_completion is nil? \(post_workout_completion == nil)")
-                                
-            } catch {
-                
-                log("post_workout_completion is nil (catch handler)? \(post_workout_completion == nil)")
-            }
-        }
-    }
-    
-    public func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
-        
-        log("didSendBodyData \(bytesSent)")
-    }
-    
 }
 
 //// MARK: - URLSessionDelegate

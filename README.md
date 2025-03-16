@@ -19,6 +19,7 @@ npx cap sync
 * [`fetch_workouts(...)`](#fetch_workouts)
 * [`initialize_background_observer(...)`](#initialize_background_observer)
 * [`update_upload_properties(...)`](#update_upload_properties)
+* [`sync_workouts(...)`](#sync_workouts)
 * [Interfaces](#interfaces)
 
 </docgen-index>
@@ -94,6 +95,19 @@ update_upload_properties(opts: { upload_url: string; upload_token: string; }) =>
 | Param      | Type                                                       |
 | ---------- | ---------------------------------------------------------- |
 | **`opts`** | <code>{ upload_url: string; upload_token: string; }</code> |
+
+--------------------
+
+
+### sync_workouts(...)
+
+```typescript
+sync_workouts(opts: { start_date?: Date; end_date?: Date; }) => Promise<void>
+```
+
+| Param      | Type                                                                                         |
+| ---------- | -------------------------------------------------------------------------------------------- |
+| **`opts`** | <code>{ start_date?: <a href="#date">Date</a>; end_date?: <a href="#date">Date</a>; }</code> |
 
 --------------------
 

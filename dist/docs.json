@@ -87,6 +87,24 @@
         "docs": "",
         "complexTypes": [],
         "slug": "update_upload_properties"
+      },
+      {
+        "name": "sync_workouts",
+        "signature": "(opts: { start_date?: Date; end_date?: Date; }) => Promise<void>",
+        "parameters": [
+          {
+            "name": "opts",
+            "docs": "",
+            "type": "{ start_date?: Date | undefined; end_date?: Date | undefined; }"
+          }
+        ],
+        "returns": "Promise<void>",
+        "tags": [],
+        "docs": "",
+        "complexTypes": [
+          "Date"
+        ],
+        "slug": "sync_workouts"
       }
     ],
     "properties": []

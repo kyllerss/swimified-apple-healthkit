@@ -5,6 +5,7 @@ export interface SwimifiedCapacitorHealthKitPlugin {
     fetch_workouts(opts: {start_date: Date, end_date: Date}): Promise<WorkoutResults>;
     initialize_background_observer(opts: {start_date: Date, upload_url: string, upload_token: string}): Promise<{authorized: boolean}>;
     update_upload_properties(opts: {upload_url: string, upload_token: string}): Promise<void>;
+    sync_workouts(opts: {start_date?: Date, end_date?: Date}): Promise<void>;
 }
 
 export interface WorkoutResults {

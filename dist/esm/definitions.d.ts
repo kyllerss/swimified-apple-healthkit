@@ -19,6 +19,10 @@ export interface SwimifiedCapacitorHealthKitPlugin {
         upload_url: string;
         upload_token: string;
     }): Promise<void>;
+    sync_workouts(opts: {
+        start_date?: Date;
+        end_date?: Date;
+    }): Promise<void>;
 }
 export interface WorkoutResults {
     count: number;

@@ -512,8 +512,8 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
 
     @MainActor @objc func sync_workouts(_ call: CAPPluginCall) {
      
-        var start_date = call.getDate("start_date")
-        var end_date = call.getDate("end_date")
+        let start_date = call.getDate("start_date")
+        let end_date = call.getDate("end_date")
         
         guard #available(iOS 15.4, *) else {
             log("Unsupported iOS version, aborting sync_workouts")
@@ -620,11 +620,10 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             effective_end_date = Date()
         }
 
-        let date_predicate = HKQuery.predicateForSamples(withStart: start_date, end: effective_end_date, options: .strictEndDate)
-        let predicates: [HKSamplePredicate<HKWorkout>] = [
-            .workout(compound_workout_predicates),
-            .workout(date_predicate)
-        ]
+        let date_predicate = HKQuery.predicateForSamples(withStart: start_date, end: effective_end_date, options: .strictStartDate)
+        
+        let unified_predicates = NSCompoundPredicate(andPredicateWithSubpredicates: [compound_workout_predicates, date_predicate])
+        let predicates = [HKSamplePredicate.workout(unified_predicates)]
         
         /*
          * Query invocation

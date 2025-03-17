@@ -7,4 +7,8 @@ CAP_PLUGIN(SwimifiedCapacitorHealthKitPlugin, "SwimifiedCapacitorHealthKit",
            CAP_PLUGIN_METHOD(request_permissions, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(fetch_workouts, CAPPluginReturnPromise);
            CAP_PLUGIN_METHOD(is_available, CAPPluginReturnPromise);
+	   CAP_PLUGIN_METHOD(initialize_background_observer, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(is_authorized, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(update_upload_properties, CAPPluginReturnPromise);
+           CAP_PLUGIN_METHOD(sync_workouts, CAPPluginReturnPromise);
 )

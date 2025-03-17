@@ -26,6 +26,16 @@
         "slug": "is_available"
       },
       {
+        "name": "is_authorized",
+        "signature": "() => Promise<{ authorized: boolean; }>",
+        "parameters": [],
+        "returns": "Promise<{ authorized: boolean; }>",
+        "tags": [],
+        "docs": "",
+        "complexTypes": [],
+        "slug": "is_authorized"
+      },
+      {
         "name": "fetch_workouts",
         "signature": "(opts: { start_date: Date; end_date: Date; }) => Promise<WorkoutResults>",
         "parameters": [
@@ -46,12 +56,46 @@
       },
       {
         "name": "initialize_background_observer",
-        "signature": "(opts: { start_date: Date; }) => Promise<void>",
+        "signature": "(opts: { start_date: Date; upload_url: string; upload_token: string; }) => Promise<{ authorized: boolean; }>",
         "parameters": [
           {
             "name": "opts",
             "docs": "",
-            "type": "{ start_date: Date; }"
+            "type": "{ start_date: Date; upload_url: string; upload_token: string; }"
+          }
+        ],
+        "returns": "Promise<{ authorized: boolean; }>",
+        "tags": [],
+        "docs": "",
+        "complexTypes": [
+          "Date"
+        ],
+        "slug": "initialize_background_observer"
+      },
+      {
+        "name": "update_upload_properties",
+        "signature": "(opts: { upload_url: string; upload_token: string; }) => Promise<void>",
+        "parameters": [
+          {
+            "name": "opts",
+            "docs": "",
+            "type": "{ upload_url: string; upload_token: string; }"
+          }
+        ],
+        "returns": "Promise<void>",
+        "tags": [],
+        "docs": "",
+        "complexTypes": [],
+        "slug": "update_upload_properties"
+      },
+      {
+        "name": "sync_workouts",
+        "signature": "(opts: { start_date?: Date; end_date?: Date; }) => Promise<void>",
+        "parameters": [
+          {
+            "name": "opts",
+            "docs": "",
+            "type": "{ start_date?: Date | undefined; end_date?: Date | undefined; }"
           }
         ],
         "returns": "Promise<void>",
@@ -60,7 +104,7 @@
         "complexTypes": [
           "Date"
         ],
-        "slug": "initialize_background_observer"
+        "slug": "sync_workouts"
       }
     ],
     "properties": []

@@ -4,6 +4,77 @@ import HealthKit
 import CoreLocation
 import os
 
+/*
+
+************************
+* IMPLEMENTATION NOTES *
+************************
+
+The following are implementation notes that explain the important parts of background function definition for Apple HealthKit (AHK) that are not detailed very clearly in Apple's documentation.
+ 
+NOTE: This is not meant to be a how-to on how to use this unpublished plugin. Use these notes to better understand how the code is structured and, more importantly, how you can implement your own version of this plugin to suit your needs. IOW, treat this as education material, nothing more.
+ 
+Generally speaking, this plugin addresses the need of the Swimerize app to detect and handle new swims that have been added to AHK. This plugin registers an HKObserver query that listens for new swims and handles them by uploading them to a target API endpoint controlled by the Swimerize app for processing.
+  
+1. INITIAL SETUP
+----------------
+
+ The app (based on my tests) needs to be configured to enable AHK background processing. This can be done in XCode under the AHK entitlements.
+ 
+ Further capabilities that I enabled are the following Background Modes: processing and fetch.
+ 
+2. APP DELEGATE CHANGES/EXPECTATIONS
+------------------------------------
+ 
+ The AppDelegate needs to implement the following method for this plugin's background processing to work under certain scenarios. I will go more into detail later on, but you will need to implement the following methods in AppDelegate:
+ 
+ ```
+ import SwimifiedAppleHealthkit
+ func application_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String, completionHandle: @escaping () -> Void {
+ 
+    BackgroundUploaderDelegate.shared.background_upload_completion = completionHandler
+ }
+ ```
+ 
+ The code above is used exclusively for use-cases where an upload was not completed by iOS at the time it was originally scheduled and was resumed at a later point in time by iOS. This code above is called by iOS when it has decided to resume an upload. If you leave it out, usecases that will fail are those where AHK sync happens when network is not available (eg. Airplane Mode or if an upload takes longer than 30 seconds).
+ 
+3. GENERAL PLUGIN LIFECYCLE
+---------------------------
+ 
+ This plugin's general usage lifecycle is as follows. Details on each step will be elaborated on later on.
+ a. User authorizes access to AHK (function `request_permissions()`).
+ b. UI invokes function `initialize_background_observer(opts: {upload_url: String, upload_token: String, start_date: Date})` to set upload properties (ie. server endpoint, and upload token) and the initial start date from which it will sync once the first callback occurs (typically set this to now). This function performs the following:
+    1. Enables background delivery through a call to `healthStore.enableBackgroundDelivery`.
+    2. Registers an HKQbserver callback query (NOTE: this step will actually run the listener query, so at this point it will look for and upload any swims that it detected in AHK based on the start_date parameter that was used when calling the initialize_background_observer function.
+ c. (Optional) the UI invokes function `sync_workouts(opts: {start_date})` with a sync start date (eg. 1 year ago, 1 month ago, now) to explicitly upload a predetermined set of swims matchig a certain range. In the case of the Swimerize app, I initialize AHK (step (b)) with a date of `now`, and I call `sync_workouts` function with dates in the past to pull in historic swims and update the UI accordingly. This step is optional and you could very well simply call step (b) with a date in the past and upload those activities accordingly.
+ 
+3. HKOBSERVERQUERY
+------------------
+ 
+ AHK implements the concept of a background notification listener through an HKObserverQuery. These queries are registered at startup (see function `load()` - which is called every time the plugin is initialized) and will be 'remembered' by AHK. AKH will invoke the corresponding continuation regardless of whether or not the app is runnig, backgrounded, or shut down each time it detects a change in AHK. The only role these queries have are to invoke the continuation with which they were created whenever new activity matching the provided criteria is detected. It is the responsibility of the registered observer query continuation to actually fetch contents from AHK for upload and process them.
+ 
+ When a new activity triggers an HKObserver query callback, this plugin will fetch the latest swims by explicitly querying AHK using the latest recorded start date (this start_date data is updated after every successful upload completion). You will see that the implementation uses a start date instead of an anchor object when querying for changes since the last HKObserver query callback. This is due to some mysterious behaviour I encountered when first testing a purely anchor-based query implementation. My testing showed that anchor queries under undocumented circumstances won't 'advance'. This was sometimes unpredictable and resulted in duplicate uploads. Since I was tracking a start date for the activities separately, and in Swimerize's case, the swims added are typically single daily swims, I did not feel the need to use anchors.
+ 
+ 4. ASYNCHRONOUS UPLOAD
+ ----------------------
+ 
+ When it comes to uploading AHK data to an endpoint when the app is 'woken up' by AHK, there are a number of execution time restrictions. For one, all querying, processing, and upload execution time must fit within 30 seconds. As this plugin is not processing these results locally but instead relying on server-side logic to process these swims, this execution window will only be impacted by slow network uploads. Depending on the size of the data being uploaded, it is possible that the upload time exceeds these 30 seconds. As such, this plugin relies on iOS's UploadTask to 'hand-off' the upload to iOS. iOS will upload the payload on its own at a future point in time. The 30 second execution time does not apply to these background upload tasks. These upload tasks also have other benefits such as partial upload resume, retries in the event of network issues, etc...
+ 
+ The following explains the execution flow for these background upload tasks:
+ 1. Happy path: When a user has good network connectivity, the execution flow is straight forward: The upload task is created, and iOS will attempt to upload the payload immediately. Upon successful completion of the upload, it will call the `BackgroundUploadDelegate.urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?)` function for each upload task created. No other lifecycle calls transpire.
+ 2. Network unavailability: When user has placed the phone in Airplane Mode (or presumably if there is no network connectivity), the upload task will not execute but rather be scheduled and remain in a task queue until the network becomes available.  Once the network becomes available and the upload has completed successfully, the AppDelegate function `application(_ application: UIApplication, handleEentsForBackgroundURLSession identifier: String, completionHandler...` is invoked. This function is only meant to record this completionHandler reference. This completionHandler will be used by the next step - however, this completioHandler's only purpose is to signal to iOS that app has successfully processed the response of the upload task. As such, this function initializes the `BackgroundUploaderDelegate.shared.background_upload_completion` reference with this completionHandler.
+ 
+  Once the completionHandler has been recorded, iOS will follow this call with a call to the `BackgroundUploaderDelegate.urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?)`. This is the place where all internal state of the plugin needs to be handled for the successful upload (in this case, updating the start_date that will be used by the next sync event). Note, this function is called once per completed task, so if there were multiple queued tasks, this function will be called multiple times.
+ 
+  Finally once all tasks have been processed by the above step, iOS will invoke `BackgroundUploaderDelegate.URLSessionDidFinishEvents(forBackgroundURLSession session: URLSession)` which is where we need to finalize processing by calling the previously-recorded completionHandler (ie. BackgroundUploaderDelegate.shared.background_upload_completion).
+ 
+  3. Network upload exceeds 30s: If the upload takes longer than 30 seconds due to the size of the data or network slowdowns, iOS will handle it in the same way as it handled scenario #2 above.
+  4. Network error: In the event that there is a network error, iOS will automatically retry the upload. No handling is necessary or possible. Once the upload succeeds, the same lifecycle calls will happen as those in scenario #2. As a side note, if there is a server-end error and a non-2xx http response status, the code in `BackgroundUploaderDelegate.urlSession` is responsible for rescheduling the upload. In this plugin's case, the start_date state is not updated and we rely on future app initializations or other AHK events to sync the ommitted upload.
+ 
+ SIDE NOTE: You will notice that the UserDefaults are executing in the MainActor thread. This is apparently a requirement by UserDefaults. There is no guarantee that the thread handling AHK observer events will be handled by the main thread, so all code dealing with updating the upload state explicitly is run in a MainActor thread.
+ 
+*/
+
 func log(_ message: String) {
     
     os_log("SwimifiedCapacitorHealthKitPlugin: %{public}@", log: OSLog.default, type: .debug, message)
@@ -11,7 +82,6 @@ func log(_ message: String) {
 
 var healthStore = HKHealthStore()
 var is_observer_active = false
-//public var post_workout_completion: (() -> Void)?
 
 public class BackgroundUploaderDelegate: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
     
@@ -24,7 +94,7 @@ public class BackgroundUploaderDelegate: NSObject, URLSessionDelegate, URLSessio
 
         super.init()
         
-        log("BackgroundUploadDelegate constructor called!")
+//        log("BackgroundUploadDelegate constructor called!")
                 
         /*
          * Always make sure that the url session delegate is available
@@ -33,23 +103,26 @@ public class BackgroundUploaderDelegate: NSObject, URLSessionDelegate, URLSessio
         config.isDiscretionary = false
         config.sessionSendsLaunchEvents = true
         
-        log("URL Session being constructed with delegate: \(type(of: self))")
+//        log("URL Session being constructed with delegate: \(type(of: self))")
         
         self.url_session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
     }
     
     public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         
-        log("urlSessionDidFinishEvents! \(String(describing: session.configuration.identifier)) \(self.background_upload_completion == nil)")
+//        log("urlSessionDidFinishEvents! \(String(describing: session.configuration.identifier)) \(self.background_upload_completion == nil)")
 
         // signal to iOS that processing complete
         self.background_upload_completion?()
         self.background_upload_completion = nil
     }
     
+    /*
+     * Called each time an upload task has completed.
+     */
     public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
     
-        log("urlSession didCompleteWithError called. Error present? \(error != nil)")
+//        log("urlSession didCompleteWithError called. Error present? \(error != nil)")
         if let error = error {
             
             log("Error completing upload: \(error)")
@@ -62,9 +135,9 @@ public class BackgroundUploaderDelegate: NSObject, URLSessionDelegate, URLSessio
             return
         }
 
-        log("Checking response status code: \(http_response.statusCode)")
+//        log("Checking response status code: \(http_response.statusCode)")
         let success_response = (200...299).contains(http_response.statusCode)
-        log("Calculated success response? \(success_response)")
+//        log("Calculated success response? \(success_response)")
         if success_response {
             
             log("Task complete with successful status code of \(http_response.statusCode)")
@@ -85,12 +158,12 @@ public class BackgroundUploaderDelegate: NSObject, URLSessionDelegate, URLSessio
                 return
             }
             
-            log("Retrieved pending upload state: \(String(describing: latest_start_date))")
+//            log("Retrieved pending upload state: \(String(describing: latest_start_date))")
                             
             // record successful completion (update latest sync start date)
             if let start_date = latest_start_date {
                 
-                log("Persisting latest start date: \(start_date)")
+//                log("Persisting latest start date: \(start_date)")
                 SwimifiedCapacitorHealthKitPlugin._store_start_date(start_date: start_date)
                 
             } else {
@@ -98,11 +171,11 @@ public class BackgroundUploaderDelegate: NSObject, URLSessionDelegate, URLSessio
                 log("WARNING! Lastest start date from UserDefaults not present.")
             }
             
-            log("post_workout_completion is nil? \(self.background_upload_completion == nil)")
+//            log("post_workout_completion is nil? \(self.background_upload_completion == nil)")
             
             SwimifiedCapacitorHealthKitPlugin._clear_pending_upload_state()
             
-            log("Finished clearing pending upload state.")
+//            log("Finished clearing pending upload state.")
                 
         }
     }
@@ -128,7 +201,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     @MainActor
     public override func load() {
         
-        log("Lifecycle method load() called on HealthKit plugin.")
+//        log("Lifecycle method load() called on HealthKit plugin.")
         
         super.load()
 
@@ -178,7 +251,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     @MainActor
     func _update_upload_properties(upload_target_url: String, upload_token: String, upload_start_date: Date?) {
         
-        log("Updating upload properties: \(upload_target_url), \(upload_token), \(String(describing: upload_start_date))")
+//        log("Updating upload properties: \(upload_target_url), \(upload_token), \(String(describing: upload_start_date))")
         // persist upload properties
         UserDefaults.standard.set(upload_target_url, forKey: "upload_target_url")
         UserDefaults.standard.set(upload_token, forKey: "upload_token")
@@ -191,7 +264,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         if let start_date = upload_start_date {
             
             SwimifiedCapacitorHealthKitPlugin._store_start_date(start_date: start_date)
-            log("Stored start_date in UserDefaults: \(start_date)")
+//            log("Stored start_date in UserDefaults: \(start_date)")
         }
     }
     
@@ -225,7 +298,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             return call.reject("Parameter upload_token is required.")
         }
         
-        log("initialize_background_observer called from JS context: \(start_date), \(upload_token)")
+//        log("initialize_background_observer called from JS context: \(start_date), \(upload_token)")
         
         // persist upload properties
         _update_upload_properties(upload_target_url: upload_target_url, upload_token: upload_token, upload_start_date: start_date)
@@ -240,7 +313,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
          * the app, which will give users the ability of controlling which
          * workouts to include/exclude.
          */
-        log("initialize_background_observer initializing start_date: \(start_date)")
+//        log("initialize_background_observer initializing start_date: \(start_date)")
         SwimifiedCapacitorHealthKitPlugin._store_start_date(start_date: start_date)
 
         _start_background_workout_observer() // initalizes anchor query and observer
@@ -261,7 +334,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     @MainActor
     private func _sync(start_date: Date?, end_date: Date?, caller_id: String) async -> Bool {
         
-        log("_sync: querying for workouts w/ \(String(describing: start_date)) and \(String(describing: end_date))")
+//        log("_sync: querying for workouts w/ \(String(describing: start_date)) and \(String(describing: end_date))")
 
         var effective_start_date = start_date
         var effective_end_date = end_date
@@ -284,13 +357,13 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             current_anchor = new_anchor
 
             if workouts.isEmpty {
-                log("Sync Workouts: No workouts left.")
+//                log("Sync Workouts: No workouts left.")
                 break
             }
             
-            log("Sync Workouts: Fetched \(workouts.count) workouts")
+//            log("Sync Workouts: Fetched \(workouts.count) workouts")
                                             
-            log("-----> Sync-posting to \(upload_url) w/ token \(upload_token)")
+//            log("-----> Sync-posting to \(upload_url) w/ token \(upload_token)")
                                     
             let latest_sync_start_date = latest_start_date ?? Date()
             let post_scheduled = await self._post_workout(workouts, upload_url: upload_url, upload_token: upload_token, latest_sync_start_date: latest_sync_start_date)
@@ -315,7 +388,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             return
         }
         
-        log("Function _start_background_workout_observer called.")
+//        log("Function _start_background_workout_observer called.")
          
         let workoutType = HKObjectType.workoutType()
         
@@ -339,7 +412,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
                 return
             }
             
-            log("------> Observer query invoked!")
+//            log("------> Observer query invoked!")
             
             if let error = error {
                 
@@ -368,7 +441,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         healthStore.execute(observerQuery)
         
         is_observer_active = true
-        log("------> Observer query registered!")
+//        log("------> Observer query registered!")
 
     }
     
@@ -414,7 +487,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     @available(iOS 15.0, *)
     private func _post_workout(_ workouts: [JSObject], upload_url: String, upload_token: String, latest_sync_start_date: Date) async -> Bool {
         
-        log("--------> Posting workout")
+//        log("--------> Posting workout")
                         
         guard let url = URL(string: upload_url) else {
             log("Unable to determine POST url endpoint: \(upload_url)")
@@ -439,7 +512,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        log("Calling url_session...")
+//        log("Calling url_session...")
 
         // create upload file
         let tmp_dir = FileManager.default.temporaryDirectory
@@ -459,7 +532,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         let upload_task = BackgroundUploaderDelegate.shared.url_session.uploadTask(with: request, fromFile: tmp_file_url)
         upload_task.resume()
             
-        log("Post workout request sent/scheduled.")
+//        log("Post workout request sent/scheduled.")
         return true
     }
     
@@ -525,7 +598,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             
             let success = await self._sync(start_date: start_date, end_date: end_date, caller_id: "sync_workouts")
             
-            log("Sync workouts success?: \(success)")
+//            log("Sync workouts success?: \(success)")
             
             call.resolve()
         }
@@ -597,13 +670,13 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
     
     private func _internal_fetch_workouts(start_date: Date?, end_date: Date?, anchor: HKQueryAnchor?, caller_id: String, limit: Int) async -> ([JSObject], Date?, HKQueryAnchor?) {
     
-        log("----> \(caller_id) => _internal_fetch_workouts... start: \(String(describing: start_date)), end: \(String(describing: end_date))");
+//        log("----> \(caller_id) => _internal_fetch_workouts... start: \(String(describing: start_date)), end: \(String(describing: end_date))");
         
         guard #available(iOS 15.4, *) else {
             return ([], nil, nil)
         }
                                 
-        log("Initializing predicate for _internal_fetch_workouts...")
+//        log("Initializing predicate for _internal_fetch_workouts...")
             
         /*
          * Predicate creation: creates a 'workout type' compound predicate (OR logic) and applies that to a date-based predicate (AND)
@@ -647,7 +720,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
 
         if workouts.isEmpty {
             
-            log("\(caller_id) _internal_fetch_workouts: No workouts found")
+//            log("\(caller_id) _internal_fetch_workouts: No workouts found")
             return ([], nil, current_anchor)
         }
 
@@ -658,9 +731,9 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         let latest_start_date = workouts.max {$0.endDate < $1.endDate }?.endDate
         let first_end_date = workouts.first?.endDate
         let latest_end_date = workouts.last?.endDate
-        log("======> first and last sanity check: \(String(describing: first_end_date)) and \(String(describing: latest_end_date))")
+//        log("======> first and last sanity check: \(String(describing: first_end_date)) and \(String(describing: latest_end_date))")
         
-        log("\(caller_id) _internal_fetch_workouts: \(to_return.count) workouts found => latest_start_date: \(String(describing: latest_start_date))")
+//        log("\(caller_id) _internal_fetch_workouts: \(to_return.count) workouts found => latest_start_date: \(String(describing: latest_start_date))")
         
         return (to_return, latest_start_date, current_anchor)
     }

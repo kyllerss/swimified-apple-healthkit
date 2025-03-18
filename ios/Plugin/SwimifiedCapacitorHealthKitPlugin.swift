@@ -257,14 +257,27 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         UserDefaults.standard.set(upload_token, forKey: "upload_token")
         
         /*
-         * Important to only update, never clear the start_date.
-         * This function is used for initial registration (start_date is provided)
-         * and for updating upload tokens (start_date is not provided).
+         * The following is needed to account for a gradual build rollout.
+         * Clients that transition for the first time to this new build will be missing
+         * the UserDefaults start_date entry. This absence will imply that the user
+         * is not authorized for AHK when in fact they are.
+         *
+         * The following ensures that the client can initialize the start_date field
+         * upon startup and transition into the new build with a correctly-migrated state.
+         *
+         * This clause will also ensure that any subsequent initializations from the client
+         * do not overwrite updates to the start_date field if the field has been updated
+         * since the user last opened the app.
          */
         if let start_date = upload_start_date {
 
-            SwimifiedCapacitorHealthKitPlugin._store_start_date(start_date: start_date)
-//            log("Stored start_date in UserDefaults: \(start_date)")
+            let authoritative_start_date = _retrieve_start_date()
+            if start_date > (authoritative_start_date ?? Date.distantPast) {
+                
+                SwimifiedCapacitorHealthKitPlugin._store_start_date(start_date: start_date)
+                //            log("Stored start_date in UserDefaults: \(start_date)")
+            }
+            
         }
     }
     

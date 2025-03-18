@@ -89,12 +89,12 @@ initialize_background_observer(opts: { start_date: Date; upload_url: string; upl
 ### update_upload_properties(...)
 
 ```typescript
-update_upload_properties(opts: { upload_url: string; upload_token: string; }) => Promise<void>
+update_upload_properties(opts: { upload_url: string; upload_token: string; start_date?: Date; }) => Promise<void>
 ```
 
-| Param      | Type                                                       |
-| ---------- | ---------------------------------------------------------- |
-| **`opts`** | <code>{ upload_url: string; upload_token: string; }</code> |
+| Param      | Type                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------- |
+| **`opts`** | <code>{ upload_url: string; upload_token: string; start_date?: <a href="#date">Date</a>; }</code> |
 
 --------------------
 

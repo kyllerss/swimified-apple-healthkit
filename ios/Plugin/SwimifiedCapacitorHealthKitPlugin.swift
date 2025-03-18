@@ -262,7 +262,7 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
          * and for updating upload tokens (start_date is not provided).
          */
         if let start_date = upload_start_date {
-            
+
             SwimifiedCapacitorHealthKitPlugin._store_start_date(start_date: start_date)
 //            log("Stored start_date in UserDefaults: \(start_date)")
         }
@@ -278,7 +278,9 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
             return call.reject("Parameter upload_token is required.")
         }
 
-        _update_upload_properties(upload_target_url: upload_target_url, upload_token: upload_token, upload_start_date: nil)
+        let start_date = call.getDate("start_date")
+
+        _update_upload_properties(upload_target_url: upload_target_url, upload_token: upload_token, upload_start_date: start_date)
             
         return call.resolve()
     }
@@ -303,20 +305,8 @@ public class SwimifiedCapacitorHealthKitPlugin: CAPPlugin {
         // persist upload properties
         _update_upload_properties(upload_target_url: upload_target_url, upload_token: upload_token, upload_start_date: start_date)
 
-        /*
-         * When this is first ever initialized (eg. during authorization process)
-         * then we need to establish a starting point (ie. start_date). This applies
-         * only to background sync callbacks for new workouts moving forward from the
-         * specified start_date.
-         *
-         * Any workouts that exist prior to that start_date are to be manually sync'ed by
-         * the app, which will give users the ability of controlling which
-         * workouts to include/exclude.
-         */
-//        log("initialize_background_observer initializing start_date: \(start_date)")
-        SwimifiedCapacitorHealthKitPlugin._store_start_date(start_date: start_date)
-
-        _start_background_workout_observer() // initalizes anchor query and observer
+        // initalize anchor query and observer
+        _start_background_workout_observer() 
                     
         call.resolve(["authorized": true])
     }

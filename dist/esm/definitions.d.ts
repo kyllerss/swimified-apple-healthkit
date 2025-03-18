@@ -18,6 +18,7 @@ export interface SwimifiedCapacitorHealthKitPlugin {
     update_upload_properties(opts: {
         upload_url: string;
         upload_token: string;
+        start_date?: Date;
     }): Promise<void>;
     sync_workouts(opts: {
         start_date?: Date;
